@@ -12,9 +12,11 @@ struct ModelPickerView: View {
     @ObservedObject var llamaManager: LlamaManager
     @State private var showFilePicker = false
     @State private var selectedFileURL: URL?
+    @Environment(\.dismiss) var dismiss
     
     var body: some View {
-        VStack(spacing: 20) {
+        NavigationStack {
+            VStack(spacing: 20) {
             Image(systemName: "doc.circle")
                 .resizable()
                 .frame(width: 80, height: 80)
@@ -101,6 +103,15 @@ struct ModelPickerView: View {
             .padding(.horizontal)
         }
         .padding()
+        .navigationTitle("모델 파일 선택")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("취소") {
+                    dismiss()
+                }
+            }
+        }
         .fileImporter(
             isPresented: $showFilePicker,
             allowedContentTypes: [UTType(filenameExtension: "gguf") ?? .data],
@@ -115,6 +126,7 @@ struct ModelPickerView: View {
             case .failure(let error):
                 print("❌ 파일 선택 실패: \(error)")
             }
+        }
         }
     }
     
@@ -150,6 +162,8 @@ struct ModelPickerView: View {
         // 모델 로드
         Task {
             await llamaManager.loadModelFromPath(url.path)
+            // 모델 로드 완료 후 모달 닫기
+            dismiss()
         }
     }
 }
