@@ -22,6 +22,8 @@ class LlamaManager: NSObject, ObservableObject {
         return manager
     }()
     private var currentLocation: CLLocation?
+    private var ipLocation: IPLocation?
+    private let ipLocationService = IPLocationService()
     
     // Llama 3.1 System Prompt (10대 발달장애인 지원 에이전트)
     private let systemPrompt = """
@@ -45,6 +47,23 @@ class LlamaManager: NSObject, ObservableObject {
         Task {
             await loadModel()
             await requestLocationPermission()
+            // 위치 권한이 없으면 IP 기반 위치 시도
+            if currentLocation == nil {
+                await fetchIPLocation()
+            }
+        }
+    }
+    
+    /// IP 기반 위치 정보 가져오기 (위치 권한이 없을 때 사용)
+    private func fetchIPLocation() async {
+        do {
+            print("🌐 IP 기반 위치 정보 가져오기 시도...")
+            ipLocation = try await ipLocationService.getLocationFromIP()
+            if let location = ipLocation {
+                print("✅ IP 기반 위치 정보 획득: \(location.displayName)")
+            }
+        } catch {
+            print("⚠️ IP 기반 위치 정보 가져오기 실패: \(error.localizedDescription)")
         }
     }
     
@@ -90,11 +109,18 @@ class LlamaManager: NSObject, ObservableObject {
         
         var context = "현재 날짜: \(dateString)\n현재 시간: \(timeString)"
         
+        // 1순위: GPS 위치 (정확도 높음)
         if let location = currentLocation {
-            // 위치 정보를 간단한 형태로 제공
             context += "\n현재 위치: 위도 \(String(format: "%.4f", location.coordinate.latitude)), 경도 \(String(format: "%.4f", location.coordinate.longitude))"
-        } else {
-            context += "\n현재 위치: 알 수 없음 (위치 권한이 필요할 수 있습니다)"
+        }
+        // 2순위: IP 기반 위치 (대략적 위치)
+        else if let ipLocation = ipLocation {
+            context += "\n현재 위치: \(ipLocation.displayName) (IP 기반, 대략적 위치)"
+            context += "\n위치 좌표: 위도 \(String(format: "%.4f", ipLocation.latitude)), 경도 \(String(format: "%.4f", ipLocation.longitude))"
+        }
+        // 위치 정보 없음
+        else {
+            context += "\n현재 위치: 알 수 없음"
         }
         
         return context
