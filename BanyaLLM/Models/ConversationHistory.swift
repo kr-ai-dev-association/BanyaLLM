@@ -63,5 +63,11 @@ class ConversationHistoryManager {
         let history = loadHistory()
         return history.suffix(count).map { $0.userQuestion }
     }
+    
+    /// 최근 N턴의 전체 대화(질문+응답) 반환
+    func getRecentTurns(count: Int = 2) -> [ConversationTurn] {
+        let history = loadHistory()
+        return Array(history.suffix(count))
+    }
 }
 

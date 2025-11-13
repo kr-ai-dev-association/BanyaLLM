@@ -179,9 +179,9 @@ class LlamaManager: NSObject, ObservableObject {
     /// - Parameters:
     ///   - userMessage: 사용자 메시지
     ///   - searchResults: 웹 검색 결과 (선택적)
-    ///   - previousQuestions: 이전 질문들 (최대 2개)
+    ///   - previousTurns: 이전 대화 턴들 (질문+응답, 최대 2개)
     /// - Returns: 포맷된 전체 프롬프트
-    private func formatChatPrompt(userMessage: String, searchResults: [SearchResult]? = nil, previousQuestions: [String] = []) -> String {
+    private func formatChatPrompt(userMessage: String, searchResults: [SearchResult]? = nil, previousTurns: [ConversationTurn] = []) -> String {
         let bos = "<|begin_of_text|>"
         let startHeader = "<|start_header_id|>"
         let endHeader = "<|end_header_id|>"
@@ -190,18 +190,19 @@ class LlamaManager: NSObject, ObservableObject {
         // 현재 컨텍스트 정보 추가
         let contextInfo = getCurrentContext()
         
-        // 이전 질문 정보 추가
-        var previousQuestionsContext = ""
-        if !previousQuestions.isEmpty {
-            previousQuestionsContext = "\n\n[이전 대화 맥락]\n"
-            for (index, question) in previousQuestions.enumerated() {
-                previousQuestionsContext += "\(index + 1). \(question)\n"
+        // 이전 대화 턴 정보 추가 (질문+응답)
+        var previousTurnsContext = ""
+        if !previousTurns.isEmpty {
+            previousTurnsContext = "\n\n[이전 대화 맥락]\n"
+            for (index, turn) in previousTurns.enumerated() {
+                previousTurnsContext += "\(index + 1). 사용자: \(turn.userQuestion)\n"
+                previousTurnsContext += "   응답: \(turn.aiResponse)\n"
             }
-            previousQuestionsContext += "\n위 질문들을 참고하여 현재 질문에 답변해주세요."
+            previousTurnsContext += "\n위 대화를 참고하여 현재 질문에 자연스럽게 답변하세요."
         }
         
         // 검색 결과가 있으면 프롬프트에 포함
-        var enhancedMessage = "[현재 상황 정보]\n\(contextInfo)\(previousQuestionsContext)\n\n[사용자 질문]\n\(userMessage)"
+        var enhancedMessage = "[현재 상황 정보]\n\(contextInfo)\(previousTurnsContext)\n\n[사용자 질문]\n\(userMessage)"
         
         if let results = searchResults, !results.isEmpty {
             var searchContext = "\n\n[참고 정보]\n"
@@ -384,11 +385,11 @@ class LlamaManager: NSObject, ObservableObject {
                         print("📴 인터넷 연결 안 됨: LLM 자체 지식으로 답변합니다.")
                     }
                     
-                    // 대화 히스토리에서 이전 질문 불러오기
-                    let previousQuestions = self.conversationHistory.getRecentUserQuestions(count: 2)
+                    // 대화 히스토리에서 이전 대화 턴 불러오기 (질문+응답)
+                    let previousTurns = self.conversationHistory.getRecentTurns(count: 2)
                     
-                    // Llama 3.1 Chat Template 적용 (검색 결과 및 이전 질문 포함)
-                    let formattedPrompt = self.formatChatPrompt(userMessage: prompt, searchResults: searchResults, previousQuestions: previousQuestions)
+                    // Llama 3.1 Chat Template 적용 (검색 결과 및 이전 대화 포함)
+                    let formattedPrompt = self.formatChatPrompt(userMessage: prompt, searchResults: searchResults, previousTurns: previousTurns)
                     
                     // LLM 추론 초기화
                     await llamaContext.completionInit(text: formattedPrompt)
@@ -546,7 +547,20 @@ class LlamaManager: NSObject, ObservableObject {
                             // 반복 감지: 문장 단위로 체크
                             let sentences = cleanedText.components(separatedBy: CharacterSet(charactersIn: ".!?\n"))
                                 .map { $0.trimmingCharacters(in: .whitespaces) }
-                                .filter { !$0.isEmpty && $0.count > 3 }  // 3자 이상인 문장 체크 (더 민감하게)
+                                .filter { sentence in
+                                    // 빈 문장 제외
+                                    guard !sentence.isEmpty && sentence.count > 3 else { return false }
+                                    // 숫자만 있는 문장 제외 (예: "3.", "1." 등)
+                                    let trimmed = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    if trimmed.range(of: "^\\d+\\.?$", options: .regularExpression) != nil {
+                                        return false
+                                    }
+                                    // 숫자로 시작하고 바로 마침표로 끝나는 문장 제외 (예: "3.")
+                                    if trimmed.range(of: "^\\d+\\.$", options: .regularExpression) != nil {
+                                        return false
+                                    }
+                                    return true
+                                }
                             
                             // 새 문장이 추가되었는지 확인
                             if sentences.count > previousSentenceCount {
