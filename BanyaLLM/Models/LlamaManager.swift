@@ -9,7 +9,7 @@ import Foundation
 import CoreLocation
 
 @MainActor
-class LlamaManager: ObservableObject {
+class LlamaManager: NSObject, ObservableObject {
     @Published var isModelLoaded: Bool = false
     @Published var loadingProgress: String = ""
     
@@ -36,7 +36,8 @@ class LlamaManager: ObservableObject {
         print("✅ Tavily API 키 설정 완료")
     }
     
-    nonisolated init() {
+    nonisolated override init() {
+        super.init()
         // 초기화는 나중에 수동으로 호출
     }
     
@@ -585,17 +586,19 @@ class LlamaManager: ObservableObject {
 
 // MARK: - CLLocationManagerDelegate
 extension LlamaManager: CLLocationManagerDelegate {
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         if let location = locations.last {
-            currentLocation = location
+            Task { @MainActor in
+                self.currentLocation = location
+            }
         }
     }
     
-    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         print("❌ 위치 정보 가져오기 실패: \(error.localizedDescription)")
     }
     
-    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         let status = manager.authorizationStatus
         if status == .authorizedWhenInUse || status == .authorizedAlways {
             manager.startUpdatingLocation()
