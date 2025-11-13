@@ -607,6 +607,32 @@ class LlamaManager: NSObject, ObservableObject {
                         return max(jaccardSimilarity, containmentSimilarity)
                     }
                     
+                    // 문장 완성 여부 확인 함수
+                    func isSentenceComplete(_ text: String) -> Bool {
+                        guard !text.isEmpty else { return false }
+                        
+                        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !trimmed.isEmpty else { return false }
+                        
+                        // 마지막 문자가 종료 문자인지 확인
+                        let lastChar = trimmed.last
+                        if lastChar == "." || lastChar == "!" || lastChar == "?" {
+                            // 마지막 문장이 완성되었는지 확인
+                            // 숫자+마침표 패턴(예: "1.", "2.")은 제외
+                            let lastSentence = trimmed.components(separatedBy: CharacterSet(charactersIn: ".!?\n")).last?.trimmingCharacters(in: .whitespaces) ?? ""
+                            
+                            // 숫자만 있는 문장이면 미완성으로 간주
+                            if lastSentence.range(of: "^\\d+\\.?$", options: .regularExpression) != nil {
+                                return false
+                            }
+                            
+                            // 마지막 문장이 종료 문자로 끝나면 완성된 것으로 간주
+                            return true
+                        }
+                        
+                        return false
+                    }
+                    
                     while await !llamaContext.isDone {
                         let token: String
                         do {
@@ -627,12 +653,12 @@ class LlamaManager: NSObject, ObservableObject {
                         }
                         
                         if !token.isEmpty {
-                            // 첫 번째 토큰 도착 - 애니메이션 중지 및 이전 "..." 지우기
+                            // 첫 번째 토큰 도착 - 애니메이션 중지
                             if !isFirstTokenReceived.value {
                                 isFirstTokenReceived.value = true
                                 animationTask.cancel()
-                                // 이전 "..."를 지우기 위해 빈 문자열 yield (UI에서 마지막 메시지를 덮어씀)
-                                continuation.yield("")
+                                // 빈 문자열을 yield하지 않고, cleanedText가 준비되면 바로 yield
+                                // 이렇게 하면 첫 글자가 잘리지 않음
                             }
                             
                             // 토큰 레벨 반복 감지 (문장 완성 전에 감지)
@@ -654,13 +680,17 @@ class LlamaManager: NSObject, ObservableObject {
                                         let allSame = recentTokens.allSatisfy { $0 == firstToken }
                                         
                                         if allSame && firstToken.count > 0 {
-                                            // 같은 토큰이 연속 반복됨 - 즉시 종료
-                                            finalResponse = filterSpecialTokens(accumulatedRaw)
-                                            await llamaContext.forceStop()
-                                            await llamaContext.clear()
-                                            self.conversationHistory.saveTurn(userQuestion: prompt, aiResponse: finalResponse)
-                                            continuation.finish()
-                                            return
+                                            // 같은 토큰이 연속 반복됨 - 문장 완성 여부 확인 후 종료
+                                            let currentText = filterSpecialTokens(accumulatedRaw)
+                                            if isSentenceComplete(currentText) {
+                                                finalResponse = currentText
+                                                await llamaContext.forceStop()
+                                                await llamaContext.clear()
+                                                self.conversationHistory.saveTurn(userQuestion: prompt, aiResponse: finalResponse)
+                                                continuation.finish()
+                                                return
+                                            }
+                                            // 미완성 문장이면 계속 진행
                                         }
                                     }
                                 }
@@ -722,17 +752,20 @@ class LlamaManager: NSObject, ObservableObject {
                                     
                                     if isRepeated {
                                         // let similarityPercent = Int((mostSimilar!.similarity * 100))
-                                        // print("🛑 반복 감지: 유사도 \(similarityPercent)% - 즉시 종료")
+                                        // print("🛑 반복 감지: 유사도 \(similarityPercent)% - 문장 완성 확인 후 종료")
                                         // print("   현재: '\(newSentence.prefix(40))...'")
                                         // print("   이전: '\(mostSimilar!.sentence.prefix(40))...'")
                                         
-                                        // 반복 감지 시 즉시 종료 (문장 완성 대기 없음)
-                                        finalResponse = cleanedText
-                                        await llamaContext.forceStop()
-                                        await llamaContext.clear()
-                                        self.conversationHistory.saveTurn(userQuestion: prompt, aiResponse: finalResponse)
-                                        continuation.finish()
-                                        return
+                                        // 반복 감지 시 문장 완성 여부 확인 후 종료
+                                        if isSentenceComplete(cleanedText) {
+                                            finalResponse = cleanedText
+                                            await llamaContext.forceStop()
+                                            await llamaContext.clear()
+                                            self.conversationHistory.saveTurn(userQuestion: prompt, aiResponse: finalResponse)
+                                            continuation.finish()
+                                            return
+                                        }
+                                        // 미완성 문장이면 계속 진행 (반복이지만 문장을 완성해야 함)
                                     }
                                     
                                     // 문장 히스토리에 추가
@@ -747,10 +780,9 @@ class LlamaManager: NSObject, ObservableObject {
                             
                             // 문장 종료 후 추가 생성 방지 (5-6문장 후 종료)
                             if !shouldStopAfterSentence && sentences.count >= 6 {
-                                let lastChar = cleanedText.last
-                                if lastChar == "." || lastChar == "!" || lastChar == "?" {
+                                // 문장 완성 여부 확인 후 종료
+                                if isSentenceComplete(cleanedText) {
                                     // print("✅ 충분한 응답 생성: 조기 종료")
-                                    // 종료 문자 확인 직후 즉시 종료 (문장이 잘리지 않도록)
                                     finalResponse = cleanedText
                                     await llamaContext.forceStop()
                                     await llamaContext.clear()
@@ -762,8 +794,8 @@ class LlamaManager: NSObject, ObservableObject {
                             
                             // 반복 감지 후 문장 완성 대기 (더 짧은 대기 시간)
                             if shouldStopAfterSentence {
-                                let lastChar = cleanedText.last
-                                if lastChar == "." || lastChar == "!" || lastChar == "?" {
+                                // 문장 완성 여부 확인 후 종료
+                                if isSentenceComplete(cleanedText) {
                                     // print("✅ 문장 완성됨: \(stopReason)로 종료")
                                     finalResponse = cleanedText
                                     await llamaContext.forceStop()
@@ -777,20 +809,23 @@ class LlamaManager: NSObject, ObservableObject {
                                 // 30자로 줄여서 문장이 잘리기 전에 빠르게 종료
                                 let textGrowth = cleanedText.count - textLengthWhenStopRequested
                                 if textGrowth > 30 {  // 대략 10-15토큰 정도 (한국어 기준)
-                                    // 문장이 완성되지 않았지만 더 이상 기다리지 않고 종료
-                                    // 마지막 문장의 마지막 단어를 확인하여 자연스러운 종료 지점 찾기
+                                    // 문장 완성 여부 확인 후 종료 (미완성이어도 너무 오래 기다렸으면 종료)
                                     // let lastWords = cleanedText.suffix(20).trimmingCharacters(in: .whitespaces)
                                     // if !lastWords.isEmpty {
                                     //     print("⚠️ 문장 완성 대기 시간 초과: 자연스러운 종료 지점에서 종료 (텍스트 증가: \(textGrowth)자)")
                                     // } else {
                                     //     print("⚠️ 문장 완성 대기 시간 초과: 강제 종료 (텍스트 증가: \(textGrowth)자)")
                                     // }
-                                    finalResponse = cleanedText
-                                    await llamaContext.forceStop()
-                                    await llamaContext.clear()
-                                    self.conversationHistory.saveTurn(userQuestion: prompt, aiResponse: finalResponse)
-                                    continuation.finish()
-                                    return
+                                    // 문장이 완성되었거나, 완성되지 않았어도 너무 오래 기다렸으면 종료
+                                    if isSentenceComplete(cleanedText) || textGrowth > 100 {
+                                        finalResponse = cleanedText
+                                        await llamaContext.forceStop()
+                                        await llamaContext.clear()
+                                        self.conversationHistory.saveTurn(userQuestion: prompt, aiResponse: finalResponse)
+                                        continuation.finish()
+                                        return
+                                    }
+                                    // 미완성이지만 아직 기다릴 수 있으면 계속 진행
                                 }
                             }
                             
@@ -798,8 +833,12 @@ class LlamaManager: NSObject, ObservableObject {
                             if cleanedText.count > previousCleanedLength {
                                 let newContent = String(cleanedText.dropFirst(previousCleanedLength))
                                 if !newContent.isEmpty {
-                                    // 첫 번째 토큰인 경우 이전 "..."를 지우기 위해 전체 텍스트를 yield
+                                    // 첫 번째 토큰인 경우: 빈 문자열을 먼저 yield하여 "..."를 지우고, 그 다음 전체 텍스트를 yield
                                     if previousCleanedLength == 0 && isFirstTokenReceived.value {
+                                        // "..."를 지우기 위해 빈 문자열 yield
+                                        continuation.yield("")
+                                        // 약간의 딜레이 후 전체 텍스트 yield (첫 글자가 잘리지 않도록)
+                                        try? await Task.sleep(nanoseconds: 50_000_000) // 0.05초 딜레이
                                         continuation.yield(cleanedText)
                                         previousCleanedLength = cleanedText.count
                                     } else {
