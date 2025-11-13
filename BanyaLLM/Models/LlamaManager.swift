@@ -206,11 +206,13 @@ class LlamaManager: ObservableObject {
                         
                         // 1. 완전한 특수 토큰 패턴 제거 (반복적으로 제거하여 중첩 패턴도 처리)
                         var previousLength = 0
-                        while cleaned.count != previousLength {
+                        var iterations = 0
+                        while cleaned.count != previousLength && iterations < 10 {
                             previousLength = cleaned.count
                             for pattern in specialTokenPatterns {
                                 cleaned = cleaned.replacingOccurrences(of: pattern, with: "")
                             }
+                            iterations += 1
                         }
                         
                         // 2. reserved_special_token 패턴 제거
@@ -224,27 +226,69 @@ class LlamaManager: ObservableObject {
                             )
                         }
                         
-                        // 3. 부분 특수 토큰 패턴 제거 (슬라이딩 윈도우)
-                        // 최근 30자 내에서 "<|" + "|>" 조합 찾기
-                        let windowSize = 30
-                        if cleaned.count >= windowSize {
-                            let recentText = String(cleaned.suffix(windowSize))
-                            // "<|"로 시작하고 "|>"로 끝나는 패턴 찾기
-                            if let startIndex = recentText.lastIndex(of: "<"),
-                               let pipeAfter = recentText.index(startIndex, offsetBy: 1, limitedBy: recentText.endIndex),
-                               pipeAfter < recentText.endIndex && recentText[pipeAfter] == "|",
-                               let endIndex = recentText.range(of: "|>", range: pipeAfter..<recentText.endIndex)?.upperBound {
-                                // 특수 토큰 패턴 발견: 전체 텍스트에서 해당 부분 제거
-                                let globalStartOffset = cleaned.count - windowSize + recentText.distance(from: recentText.startIndex, to: startIndex)
-                                let globalEndOffset = cleaned.count - windowSize + recentText.distance(from: recentText.startIndex, to: endIndex)
-                                
-                                let globalStart = cleaned.index(cleaned.startIndex, offsetBy: globalStartOffset)
-                                let globalEnd = cleaned.index(cleaned.startIndex, offsetBy: globalEndOffset)
-                                cleaned = String(cleaned[..<globalStart]) + String(cleaned[globalEnd...])
+                        // 3. 부분 특수 토큰 패턴 제거 (공격적 필터링)
+                        // "<|" + "|>" 조합을 찾아 제거
+                        var foundPattern = true
+                        while foundPattern {
+                            foundPattern = false
+                            if let startRange = cleaned.range(of: "<|", options: .backwards),
+                               let endRange = cleaned.range(of: "|>", range: startRange.upperBound..<cleaned.endIndex) {
+                                // 특수 토큰 패턴 발견: 제거
+                                cleaned = String(cleaned[..<startRange.lowerBound]) + String(cleaned[endRange.upperBound...])
+                                foundPattern = true
                             }
                         }
                         
+                        // 4. 이상한 패턴 제거 (<kts:1> 등)
+                        if let regex = try? NSRegularExpression(pattern: "<[^>]*>", options: []) {
+                            let range = NSRange(cleaned.startIndex..., in: cleaned)
+                            cleaned = regex.stringByReplacingMatches(
+                                in: cleaned,
+                                options: [],
+                                range: range,
+                                withTemplate: ""
+                            )
+                        }
+                        
+                        // 5. 특수 문자 조합 제거 (^^ 등 불필요한 이모지)
+                        cleaned = cleaned.replacingOccurrences(of: "^^", with: "")
+                        cleaned = cleaned.replacingOccurrences(of: "^^^", with: "")
+                        
                         return cleaned
+                    }
+                    
+                    // 반복 감지 및 조기 종료
+                    var lastSentences: [String] = []  // 최근 문장들 저장
+                    var previousSentenceCount = 0
+                    let maxSentenceHistory = 5  // 최근 5개 문장만 저장
+                    let similarityThreshold = 0.8  // 80% 이상 유사하면 반복으로 간주
+                    
+                    // 문장 유사도 계산 함수 (Jaccard 유사도 + Levenshtein 거리)
+                    func calculateSimilarity(_ str1: String, _ str2: String) -> Double {
+                        // 1. 완전 일치
+                        if str1 == str2 {
+                            return 1.0
+                        }
+                        
+                        // 2. 단어 기반 Jaccard 유사도
+                        let words1 = Set(str1.components(separatedBy: .whitespaces).filter { !$0.isEmpty })
+                        let words2 = Set(str2.components(separatedBy: .whitespaces).filter { !$0.isEmpty })
+                        
+                        guard !words1.isEmpty && !words2.isEmpty else {
+                            return 0.0
+                        }
+                        
+                        let intersection = words1.intersection(words2)
+                        let union = words1.union(words2)
+                        let jaccardSimilarity = Double(intersection.count) / Double(union.count)
+                        
+                        // 3. 문자열 길이 기반 유사도 (짧은 문장이 긴 문장에 포함되는 경우)
+                        let longer = str1.count > str2.count ? str1 : str2
+                        let shorter = str1.count > str2.count ? str2 : str1
+                        let containmentSimilarity = longer.contains(shorter) ? Double(shorter.count) / Double(longer.count) : 0.0
+                        
+                        // 4. 최대값 반환 (둘 중 하나라도 높으면 유사)
+                        return max(jaccardSimilarity, containmentSimilarity)
                     }
                     
                     while await !llamaContext.isDone {
@@ -255,6 +299,67 @@ class LlamaManager: ObservableObject {
                             
                             // 강화된 특수 토큰 필터링
                             var cleanedText = filterSpecialTokens(accumulatedRaw)
+                            
+                            // 반복 감지: 문장 단위로 체크
+                            let sentences = cleanedText.components(separatedBy: CharacterSet(charactersIn: ".!?\n"))
+                                .map { $0.trimmingCharacters(in: .whitespaces) }
+                                .filter { !$0.isEmpty && $0.count > 5 }  // 5자 이상인 문장만 체크
+                            
+                            // 새 문장이 추가되었는지 확인
+                            if sentences.count > previousSentenceCount {
+                                let newSentences = Array(sentences.suffix(sentences.count - previousSentenceCount))
+                                
+                                for newSentence in newSentences {
+                                    // 유사도 기반 반복 감지
+                                    var isRepeated = false
+                                    var mostSimilar: (sentence: String, similarity: Double)?
+                                    
+                                    for previousSentence in lastSentences {
+                                        let similarity = calculateSimilarity(newSentence, previousSentence)
+                                        
+                                        if similarity >= similarityThreshold {
+                                            isRepeated = true
+                                            mostSimilar = (previousSentence, similarity)
+                                            break
+                                        }
+                                        
+                                        // 가장 유사한 문장 추적 (디버깅용)
+                                        if mostSimilar == nil || similarity > mostSimilar!.similarity {
+                                            mostSimilar = (previousSentence, similarity)
+                                        }
+                                    }
+                                    
+                                    if isRepeated {
+                                        let similarityPercent = Int((mostSimilar!.similarity * 100))
+                                        print("🛑 반복 감지: 유사도 \(similarityPercent)%")
+                                        print("   현재: '\(newSentence.prefix(40))...'")
+                                        print("   이전: '\(mostSimilar!.sentence.prefix(40))...'")
+                                        await llamaContext.forceStop()
+                                        await llamaContext.clear()
+                                        continuation.finish()
+                                        return
+                                    }
+                                    
+                                    // 문장 히스토리에 추가
+                                    lastSentences.append(newSentence)
+                                    if lastSentences.count > maxSentenceHistory {
+                                        lastSentences.removeFirst()
+                                    }
+                                }
+                                
+                                previousSentenceCount = sentences.count
+                            }
+                            
+                            // 문장 종료 후 추가 생성 방지 (2-3문장 후 종료)
+                            if sentences.count >= 3 {
+                                let lastChar = cleanedText.last
+                                if lastChar == "." || lastChar == "!" || lastChar == "?" {
+                                    print("✅ 충분한 응답 생성: 조기 종료")
+                                    await llamaContext.forceStop()
+                                    await llamaContext.clear()
+                                    break
+                                }
+                            }
                             
                             // 이전에 출력한 부분을 제외하고 새로운 부분만 출력
                             if cleanedText.count > previousCleanedLength {

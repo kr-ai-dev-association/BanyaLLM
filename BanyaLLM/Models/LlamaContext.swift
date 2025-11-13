@@ -42,6 +42,11 @@ actor LlamaContext {
     var isDone: Bool = false
     var n_len: Int32 = 64   // 최대 생성 토큰 수 (매우 간결한 응답, 2-3문장)
     var n_cur: Int32 = 0
+    
+    // 강제 종료 메서드
+    func forceStop() {
+        isDone = true
+    }
     var n_decode: Int32 = 0
     
     private let modelPath: String
