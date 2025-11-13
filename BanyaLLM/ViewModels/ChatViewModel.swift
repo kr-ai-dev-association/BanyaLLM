@@ -14,7 +14,7 @@ class ChatViewModel: ObservableObject {
     @Published var inputText: String = ""
     @Published var isLoading: Bool = false
     
-    private let llamaManager: LlamaManager
+    let llamaManager: LlamaManager  // public으로 변경하여 UI에서 접근 가능
     
     init(llamaManager: LlamaManager = LlamaManager()) {
         self.llamaManager = llamaManager

@@ -14,6 +14,12 @@ struct ChatView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                // 모델 상태 표시
+                ModelStatusView(llamaManager: viewModel.llamaManager)
+                    .padding(.horizontal)
+                
+                Divider()
+                
                 // 메시지 리스트
                 ScrollViewReader { proxy in
                     ScrollView {

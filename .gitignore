@@ -94,3 +94,9 @@ BanyaLLM/Assets.xcassets/llama31-banyaa-q4_k_m.gguf
 BanyaLLM/llama31-banyaa-q4_k_m.gguf
 *.gguf
 
+# llama.cpp
+llama.cpp/
+llama.xcframework/
+llama_build.log
+setup_llama.sh
+
