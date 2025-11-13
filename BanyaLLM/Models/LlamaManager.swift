@@ -180,44 +180,26 @@ class LlamaManager: ObservableObject {
                         return
                     }
                     
-                    print(String(repeating: "=", count: 50))
                     print("🎯 LLM 생성 시작")
-                    print("📥 사용자 메시지: '\(prompt)'")
                     
                     // Llama 3.1 Chat Template 적용
                     let formattedPrompt = self.formatChatPrompt(userMessage: prompt)
-                    print("📝 Chat Template 적용 완료")
-                    print("📄 전체 프롬프트 길이: \(formattedPrompt.count) 문자")
-                    print(String(repeating: "=", count: 50))
                     
                     // LLM 추론 초기화
-                    print("🔄 completionInit 호출 직전")
                     await llamaContext.completionInit(text: formattedPrompt)
-                    print("🔄 completionInit 호출 완료")
-                    print("🔄 isDone 상태: \(await llamaContext.isDone)")
-                    
-                    var totalTokens = 0
-                    var totalOutput = ""
                     
                     // 스트리밍 응답 생성
                     while await !llamaContext.isDone {
                         let token = await llamaContext.completionLoop()
                         
                         if !token.isEmpty {
-                            totalTokens += 1
-                            totalOutput += token
-                            print("📤 출력 토큰 #\(totalTokens): '\(token)'")
                             continuation.yield(token)
                             // 자연스러운 타이핑 효과
-                            try? await Task.sleep(nanoseconds: 50_000_000) // 0.05초
+                            try? await Task.sleep(nanoseconds: 50_000_000)
                         }
                     }
                     
-                    print(String(repeating: "=", count: 50))
                     print("✅ 생성 완료")
-                    print("📊 총 토큰 수: \(totalTokens)")
-                    print("📝 전체 출력: '\(totalOutput)'")
-                    print(String(repeating: "=", count: 50))
                     
                     // 추론 완료 후 정리
                     await llamaContext.clear()

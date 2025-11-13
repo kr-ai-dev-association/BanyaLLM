@@ -131,29 +131,21 @@ actor LlamaContext {
     }
     
     func completionInit(text: String) {
-        print("⏰ completionInit 호출됨")
-        print("📌 context 상태: \(context != nil ? "존재" : "nil")")
-        print("📌 vocab 상태: \(vocab != nil ? "존재" : "nil")")
-        print("📌 sampling 상태: \(sampling != nil ? "존재" : "nil")")
+        print("🚀 추론 시작")
         
         guard let context = context else { 
             print("❌ context가 nil입니다!")
             return 
         }
         
-        print("🚀 추론 시작")
-        print("📝 입력 텍스트: '\(text)'")
-        
         tokens_list = tokenize(text: text, add_bos: true)
         temporary_invalid_cchars = []
         
-        print("🔢 토큰화 완료: \(tokens_list.count)개 토큰")
-        print("🔢 토큰 목록: \(tokens_list.prefix(10))...")
+        print("🔢 토큰화: \(tokens_list.count)개")
         
         let n_ctx = llama_n_ctx(context)
         let n_kv_req = tokens_list.count + (Int(n_len) - tokens_list.count)
         
-        print("📊 n_len = \(n_len), n_ctx = \(n_ctx), n_kv_req = \(n_kv_req)")
         
         if n_kv_req > n_ctx {
             print("⚠️ 경고: n_kv_req > n_ctx")
@@ -175,48 +167,45 @@ actor LlamaContext {
     }
     
     func completionLoop() -> String {
-        print("🔁 completionLoop 호출됨 (isDone: \(isDone))")
-        
         guard let context = context,
               let sampling = sampling,
               let vocab = vocab else {
-            print("❌ completionLoop: context/sampling/vocab 중 하나가 nil")
             isDone = true
             return ""
         }
         
-        print("🔁 샘플링 시작 (batch.n_tokens: \(batch.n_tokens))")
         let new_token_id = llama_sampler_sample(sampling, context, batch.n_tokens - 1)
         
-        print("🔹 생성된 토큰 ID: \(new_token_id), 위치: \(n_cur)/\(n_len)")
+        // EOG 토큰 감지 (llama_token_is_eog 사용)
+        guard let model = model else {
+            isDone = true
+            return ""
+        }
         
-        if llama_vocab_is_eog(vocab, new_token_id) || n_cur == n_len {
-            print("✅ 생성 완료 (토큰: \(new_token_id), EOG: \(llama_vocab_is_eog(vocab, new_token_id)), 위치: \(n_cur)/\(n_len))")
+        let isEOG = llama_token_is_eog(model, new_token_id)
+        
+        if isEOG || n_cur == n_len {
+            print("✅ 생성 완료 (EOG: \(isEOG), 토큰: \(n_cur)개)")
             isDone = true
             let new_token_str = String(cString: temporary_invalid_cchars + [0])
             temporary_invalid_cchars.removeAll()
-            print("📝 최종 반환: '\(new_token_str)'")
             return new_token_str
         }
         
         let new_token_cchars = token_to_piece(token: new_token_id)
-        print("🔤 토큰 변환: \(new_token_cchars.count)바이트")
         temporary_invalid_cchars.append(contentsOf: new_token_cchars)
         let new_token_str: String
         if let string = String(validatingUTF8: temporary_invalid_cchars + [0]) {
             temporary_invalid_cchars.removeAll()
             new_token_str = string
-            print("✅ UTF8 변환 성공: '\(new_token_str)'")
         } else if (0..<temporary_invalid_cchars.count).contains(where: {
             $0 != 0 && String(validatingUTF8: Array(temporary_invalid_cchars.suffix($0)) + [0]) != nil
         }) {
             let string = String(cString: temporary_invalid_cchars + [0])
             temporary_invalid_cchars.removeAll()
             new_token_str = string
-            print("⚠️ 부분 UTF8 변환: '\(new_token_str)'")
         } else {
             new_token_str = ""
-            print("⏳ UTF8 대기 중... (버퍼: \(temporary_invalid_cchars.count)바이트)")
         }
         
         llama_batch_clear(&batch)
