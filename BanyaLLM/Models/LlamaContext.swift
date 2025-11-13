@@ -96,11 +96,34 @@ actor LlamaContext {
         }
         self.context = loadedContext
         
-        // Sampling 초기화
+        // Sampling 초기화 (Llama 3.1 최적화)
         let sparams = llama_sampler_chain_default_params()
         self.sampling = llama_sampler_chain_init(sparams)
-        llama_sampler_chain_add(self.sampling, llama_sampler_init_temp(0.8))
+        
+        // 1. Top-K 샘플링 (0 = 비활성화, Llama 3.1 권장)
+        llama_sampler_chain_add(self.sampling, llama_sampler_init_top_k(0))
+        
+        // 2. Top-P (Nucleus Sampling) - 0.9
+        llama_sampler_chain_add(self.sampling, llama_sampler_init_top_p(0.9, 1))
+        
+        // 3. Min-P - 낮은 확률 토큰 배제 (Llama 3.1 핵심 설정)
+        llama_sampler_chain_add(self.sampling, llama_sampler_init_min_p(0.05, 1))
+        
+        // 4. Temperature - 창의성 조절 (0.7 = 자연스러운 대화)
+        llama_sampler_chain_add(self.sampling, llama_sampler_init_temp(0.7))
+        
+        // 5. Repeat Penalty - 반복 방지 (1.05 = 적당한 패널티)
+        llama_sampler_chain_add(self.sampling, llama_sampler_init_penalties(
+            512,    // last_n: 최근 512 토큰 고려
+            1.05,   // repeat_penalty: 반복 패널티
+            0.0,    // freq_penalty
+            0.0     // presence_penalty
+        ))
+        
+        // 6. Dist 샘플링 (최종 토큰 선택)
         llama_sampler_chain_add(self.sampling, llama_sampler_init_dist(UInt32.random(in: 0...1000)))
+        
+        print("🎛️ 샘플링 설정: Temp=0.7, Top-P=0.9, Min-P=0.05, Repeat=1.05")
         
         self.vocab = llama_model_get_vocab(loadedModel)
         

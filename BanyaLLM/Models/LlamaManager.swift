@@ -15,6 +15,14 @@ class LlamaManager: ObservableObject {
     private var llamaContext: LlamaContext?
     private let modelFilename = "llama31-banyaa-q4_k_m.gguf"
     
+    // Llama 3.1 System Prompt (대화 품질 향상)
+    private let systemPrompt = """
+당신은 친절하고 능숙한 한국어 대화 전문가입니다.
+항상 한국어로만 대답하며, 질문에 명확하고 상세하게 답변합니다.
+답변은 간결하고 이해하기 쉽게 작성하며, 불필요한 서론은 피합니다.
+모르는 정보에 대해서는 솔직하게 "죄송하지만 그 정보는 알 수 없습니다"라고 답변합니다.
+"""
+    
     nonisolated init() {
         // 초기화는 나중에 수동으로 호출
     }
@@ -23,6 +31,29 @@ class LlamaManager: ObservableObject {
         Task {
             await loadModel()
         }
+    }
+    
+    // MARK: - Llama 3.1 Chat Template
+    
+    /// Llama 3.1 공식 Chat Template 적용
+    /// - Parameter userMessage: 사용자 메시지
+    /// - Returns: 포맷된 전체 프롬프트
+    private func formatChatPrompt(userMessage: String) -> String {
+        let bos = "<|begin_of_text|>"
+        let startHeader = "<|start_header_id|>"
+        let endHeader = "<|end_header_id|>"
+        let eot = "<|eot_id|>"
+        
+        let formattedPrompt = """
+\(bos)\(startHeader)system\(endHeader)
+
+\(systemPrompt)\(eot)\(startHeader)user\(endHeader)
+
+\(userMessage)\(eot)\(startHeader)assistant\(endHeader)
+
+"""
+        
+        return formattedPrompt
     }
     
     func loadModel() async {
@@ -151,12 +182,17 @@ class LlamaManager: ObservableObject {
                     
                     print(String(repeating: "=", count: 50))
                     print("🎯 LLM 생성 시작")
-                    print("📥 프롬프트: '\(prompt)'")
+                    print("📥 사용자 메시지: '\(prompt)'")
+                    
+                    // Llama 3.1 Chat Template 적용
+                    let formattedPrompt = self.formatChatPrompt(userMessage: prompt)
+                    print("📝 Chat Template 적용 완료")
+                    print("📄 전체 프롬프트 길이: \(formattedPrompt.count) 문자")
                     print(String(repeating: "=", count: 50))
                     
                     // LLM 추론 초기화
                     print("🔄 completionInit 호출 직전")
-                    await llamaContext.completionInit(text: prompt)
+                    await llamaContext.completionInit(text: formattedPrompt)
                     print("🔄 completionInit 호출 완료")
                     print("🔄 isDone 상태: \(await llamaContext.isDone)")
                     
