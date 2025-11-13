@@ -419,8 +419,8 @@ class LlamaManager: NSObject, ObservableObject {
                     // 반복 감지 및 조기 종료
                     var lastSentences: [String] = []  // 최근 문장들 저장
                     var previousSentenceCount = 0
-                    let maxSentenceHistory = 5  // 최근 5개 문장만 저장
-                    let similarityThreshold = 0.8  // 80% 이상 유사하면 반복으로 간주
+                    let maxSentenceHistory = 10  // 최근 10개 문장 저장 (더 많은 히스토리)
+                    let similarityThreshold = 0.7  // 70% 이상 유사하면 반복으로 간주 (더 엄격)
                     var shouldStopAfterSentence = false  // 문장 완성 후 종료 플래그
                     var stopReason = ""  // 종료 이유
                     var textLengthWhenStopRequested = 0  // 종료 요청 시점의 텍스트 길이
@@ -465,7 +465,7 @@ class LlamaManager: NSObject, ObservableObject {
                             // 반복 감지: 문장 단위로 체크
                             let sentences = cleanedText.components(separatedBy: CharacterSet(charactersIn: ".!?\n"))
                                 .map { $0.trimmingCharacters(in: .whitespaces) }
-                                .filter { !$0.isEmpty && $0.count > 5 }  // 5자 이상인 문장만 체크
+                                .filter { !$0.isEmpty && $0.count > 3 }  // 3자 이상인 문장 체크 (더 민감하게)
                             
                             // 새 문장이 추가되었는지 확인
                             if sentences.count > previousSentenceCount {
@@ -493,26 +493,15 @@ class LlamaManager: NSObject, ObservableObject {
                                     
                                     if isRepeated {
                                         let similarityPercent = Int((mostSimilar!.similarity * 100))
-                                        print("🛑 반복 감지: 유사도 \(similarityPercent)%")
+                                        print("🛑 반복 감지: 유사도 \(similarityPercent)% - 즉시 종료")
                                         print("   현재: '\(newSentence.prefix(40))...'")
                                         print("   이전: '\(mostSimilar!.sentence.prefix(40))...'")
                                         
-                                        // 문장이 완성되었는지 확인
-                                        let lastChar = cleanedText.last
-                                        if lastChar == "." || lastChar == "!" || lastChar == "?" {
-                                            // 문장이 완성되었으므로 즉시 종료
-                                            print("✅ 문장 완성됨: 즉시 종료")
-                                            await llamaContext.forceStop()
-                                            await llamaContext.clear()
-                                            continuation.finish()
-                                            return
-                                        } else {
-                                            // 문장이 미완성: 완성될 때까지 대기
-                                            print("⏳ 문장 미완성: 완성될 때까지 대기...")
-                                            shouldStopAfterSentence = true
-                                            stopReason = "반복 감지"
-                                            textLengthWhenStopRequested = cleanedText.count
-                                        }
+                                        // 반복 감지 시 즉시 종료 (문장 완성 대기 없음)
+                                        await llamaContext.forceStop()
+                                        await llamaContext.clear()
+                                        continuation.finish()
+                                        return
                                     }
                                     
                                     // 문장 히스토리에 추가
