@@ -17,9 +17,9 @@ class LlamaManager: ObservableObject {
     
     // Llama 3.1 System Prompt (대화 품질 향상)
     private let systemPrompt = """
-당신은 친절하고 능숙한 한국어 대화 전문가입니다.
-항상 한국어로만 대답하며, 질문에 명확하고 상세하게 답변합니다.
-답변은 간결하고 이해하기 쉽게 작성하며, 불필요한 서론은 피합니다.
+당신은 친절하고 간결한 한국어 대화 전문가입니다.
+항상 한국어로만 대답하며, 질문에 핵심만 명확하게 답변합니다.
+답변은 2-3문장 이내로 간결하게 작성하고, 반복이나 장황한 설명을 피합니다.
 모르는 정보에 대해서는 솔직하게 "죄송하지만 그 정보는 알 수 없습니다"라고 답변합니다.
 """
     
@@ -186,12 +186,52 @@ class LlamaManager: ObservableObject {
                     // LLM 추론 초기화
                     await llamaContext.completionInit(text: formattedPrompt)
                     
-                    // 스트리밍 응답 생성
+                    // 스트리밍 응답 생성 (누적 버퍼로 특수 토큰 필터링)
+                    var accumulatedRaw = ""
+                    var previousCleanedLength = 0
+                    let specialTokenPatterns = [
+                        "<|begin_of_text|>",
+                        "<|end_of_text|>",
+                        "<|start_header_id|>",
+                        "<|end_header_id|>",
+                        "<|eot_id|>",
+                        "<|eom_id|>",
+                        "<|python_tag|>",
+                        "<|finetune_right_pad_id|>"
+                    ]
+                    
                     while await !llamaContext.isDone {
                         let token = await llamaContext.completionLoop()
                         
                         if !token.isEmpty {
-                            continuation.yield(token)
+                            accumulatedRaw += token
+                            
+                            // 특수 토큰 패턴 제거
+                            var cleanedText = accumulatedRaw
+                            for pattern in specialTokenPatterns {
+                                cleanedText = cleanedText.replacingOccurrences(of: pattern, with: "")
+                            }
+                            
+                            // reserved_special_token 패턴 제거
+                            if let regex = try? NSRegularExpression(pattern: "<\\|reserved_special_token_\\d+\\|>", options: []) {
+                                let range = NSRange(cleanedText.startIndex..., in: cleanedText)
+                                cleanedText = regex.stringByReplacingMatches(
+                                    in: cleanedText,
+                                    options: [],
+                                    range: range,
+                                    withTemplate: ""
+                                )
+                            }
+                            
+                            // 이전에 출력한 부분을 제외하고 새로운 부분만 출력
+                            if cleanedText.count > previousCleanedLength {
+                                let newContent = String(cleanedText.dropFirst(previousCleanedLength))
+                                if !newContent.isEmpty {
+                                    continuation.yield(newContent)
+                                    previousCleanedLength = cleanedText.count
+                                }
+                            }
+                            
                             // 자연스러운 타이핑 효과
                             try? await Task.sleep(nanoseconds: 50_000_000)
                         }

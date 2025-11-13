@@ -40,7 +40,7 @@ actor LlamaContext {
     private var temporary_invalid_cchars: [CChar] = []
     
     var isDone: Bool = false
-    var n_len: Int32 = 512
+    var n_len: Int32 = 128  // 최대 생성 토큰 수 (간결한 응답)
     var n_cur: Int32 = 0
     var n_decode: Int32 = 0
     
