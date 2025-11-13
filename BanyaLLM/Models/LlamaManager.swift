@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import CoreLocation
 
 @MainActor
 class LlamaManager: ObservableObject {
@@ -14,11 +15,26 @@ class LlamaManager: ObservableObject {
     
     private var llamaContext: LlamaContext?
     private let modelFilename = "llama31-banyaa-q4_k_m.gguf"
+    private var tavilyService: TavilyService?
+    private lazy var locationManager: CLLocationManager = {
+        let manager = CLLocationManager()
+        manager.delegate = self
+        return manager
+    }()
+    private var currentLocation: CLLocation?
     
     // Llama 3.1 System Prompt (10대 발달장애인 지원 에이전트)
     private let systemPrompt = """
 너는 10대 발달장애인의 일상을 돕는 한국어 에이전트다. 말은 간단하고 짧게 한다. 한 번에 한 단계씩 안내한다. 위급한 상황이라고 판단될 경우 즉시 보호자나 119에 연락하도록 안내한다. 복잡한 요청은 다시 확인하고 필요한 정보를 먼저 묻는다. 일정 관리, 준비물 체크, 이동 안내, 감정 조절 도움, 사회적 상황 대처 연습을 친절하게 돕는게 너의 제일 큰 역할이야. 물결표와 이모티콘, 과도한 문장부호(!!!, .. 등)는 사용하지 않는다. 문장부호는 최대 1개만 사용한다. 그리고 최대한 친절하게 대답하고 친근하게 대답해.
+
+사용자가 제공하는 현재 날짜, 시간, 위치 정보를 활용하여 실시간 정보가 필요한 질문에 답변할 수 있다. 날씨, 현재 시간 기반 일정, 위치 기반 정보 등이 필요하면 웹 검색을 통해 최신 정보를 찾아 답변해야 한다.
 """
+    
+    // Tavily API 키 설정 (환경 변수나 설정에서 가져올 수 있음)
+    func setTavilyAPIKey(_ apiKey: String) {
+        self.tavilyService = TavilyService(apiKey: apiKey)
+        print("✅ Tavily API 키 설정 완료")
+    }
     
     nonisolated init() {
         // 초기화는 나중에 수동으로 호출
@@ -27,30 +43,124 @@ class LlamaManager: ObservableObject {
     func initialize() {
         Task {
             await loadModel()
+            await requestLocationPermission()
         }
+    }
+    
+    /// 위치 권한 요청 및 현재 위치 가져오기
+    private func requestLocationPermission() async {
+        let status = locationManager.authorizationStatus
+        
+        if status == .notDetermined {
+            locationManager.requestWhenInUseAuthorization()
+            // 권한 응답 대기
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+        }
+        
+        let newStatus = locationManager.authorizationStatus
+        if newStatus == .authorizedWhenInUse || newStatus == .authorizedAlways {
+            locationManager.desiredAccuracy = kCLLocationAccuracyKilometer
+            locationManager.startUpdatingLocation()
+            
+            // 위치 업데이트 대기 (최대 3초)
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            currentLocation = locationManager.location
+            locationManager.stopUpdatingLocation()
+            
+            if currentLocation != nil {
+                print("✅ 현재 위치 정보 획득 완료")
+            } else {
+                print("⚠️ 위치 정보를 가져올 수 없습니다")
+            }
+        } else {
+            print("⚠️ 위치 권한이 없습니다. 날짜/시간 정보만 제공됩니다.")
+        }
+    }
+    
+    /// 현재 컨텍스트 정보 가져오기 (날짜, 시간, 위치)
+    private func getCurrentContext() -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ko_KR")
+        formatter.dateFormat = "yyyy년 MM월 dd일 EEEE"
+        let dateString = formatter.string(from: Date())
+        
+        formatter.dateFormat = "HH시 mm분"
+        let timeString = formatter.string(from: Date())
+        
+        var context = "현재 날짜: \(dateString)\n현재 시간: \(timeString)"
+        
+        if let location = currentLocation {
+            // 위치 정보를 간단한 형태로 제공
+            context += "\n현재 위치: 위도 \(String(format: "%.4f", location.coordinate.latitude)), 경도 \(String(format: "%.4f", location.coordinate.longitude))"
+        } else {
+            context += "\n현재 위치: 알 수 없음 (위치 권한이 필요할 수 있습니다)"
+        }
+        
+        return context
     }
     
     // MARK: - Llama 3.1 Chat Template
     
     /// Llama 3.1 공식 Chat Template 적용
-    /// - Parameter userMessage: 사용자 메시지
+    /// - Parameters:
+    ///   - userMessage: 사용자 메시지
+    ///   - searchResults: 웹 검색 결과 (선택적)
     /// - Returns: 포맷된 전체 프롬프트
-    private func formatChatPrompt(userMessage: String) -> String {
+    private func formatChatPrompt(userMessage: String, searchResults: [SearchResult]? = nil) -> String {
         let bos = "<|begin_of_text|>"
         let startHeader = "<|start_header_id|>"
         let endHeader = "<|end_header_id|>"
         let eot = "<|eot_id|>"
+        
+        // 현재 컨텍스트 정보 추가
+        let contextInfo = getCurrentContext()
+        
+        // 검색 결과가 있으면 프롬프트에 포함
+        var enhancedMessage = "[현재 상황 정보]\n\(contextInfo)\n\n[사용자 질문]\n\(userMessage)"
+        
+        if let results = searchResults, !results.isEmpty {
+            var searchContext = "\n\n[웹 검색 결과]\n"
+            for (index, result) in results.enumerated() {
+                searchContext += "\(index + 1). \(result.title)\n"
+                searchContext += "   \(result.content.prefix(200))\n"
+            }
+            searchContext += "\n위 검색 결과를 참고하여 질문에 답변해주세요."
+            enhancedMessage += searchContext
+        }
         
         let formattedPrompt = """
 \(bos)\(startHeader)system\(endHeader)
 
 \(systemPrompt)\(eot)\(startHeader)user\(endHeader)
 
-\(userMessage)\(eot)\(startHeader)assistant\(endHeader)
+\(enhancedMessage)\(eot)\(startHeader)assistant\(endHeader)
 
 """
         
         return formattedPrompt
+    }
+    
+    /// 사용자 질문이 웹 검색이 필요한지 판단
+    private func needsWebSearch(_ query: String) -> Bool {
+        let searchKeywords = [
+            "날씨", "뉴스", "최신", "현재", "오늘", "지금",
+            "어떻게", "무엇", "언제", "어디", "누가", "왜",
+            "검색", "찾아", "알려", "정보"
+        ]
+        
+        let lowercased = query.lowercased()
+        return searchKeywords.contains { lowercased.contains($0) }
+    }
+    
+    /// LLM 응답이 "모르는 정보"를 나타내는지 체크
+    private func indicatesUnknownInfo(_ response: String) -> Bool {
+        let unknownPatterns = [
+            "알 수 없", "모르", "정보 없", "확실하지 않",
+            "죄송하지만", "제가 모르는", "알지 못"
+        ]
+        
+        let lowercased = response.lowercased()
+        return unknownPatterns.contains { lowercased.contains($0) }
     }
     
     func loadModel() async {
@@ -177,8 +287,27 @@ class LlamaManager: ObservableObject {
                         return
                     }
                     
-                    // Llama 3.1 Chat Template 적용
-                    let formattedPrompt = self.formatChatPrompt(userMessage: prompt)
+                    // 웹 검색이 필요한지 판단
+                    var searchResults: [SearchResult]? = nil
+                    if let tavilyService = self.tavilyService, self.needsWebSearch(prompt) {
+                        print("🔍 웹 검색이 필요합니다. Tavily로 검색 중...")
+                        continuation.yield("검색 중... ")
+                        
+                        do {
+                            searchResults = try await tavilyService.search(query: prompt)
+                            if let results = searchResults, !results.isEmpty {
+                                print("✅ 검색 결과 \(results.count)개 발견")
+                            } else {
+                                print("⚠️ 검색 결과 없음")
+                            }
+                        } catch {
+                            print("❌ Tavily 검색 실패: \(error)")
+                            // 검색 실패해도 LLM 응답은 계속 진행
+                        }
+                    }
+                    
+                    // Llama 3.1 Chat Template 적용 (검색 결과 포함)
+                    let formattedPrompt = self.formatChatPrompt(userMessage: prompt, searchResults: searchResults)
                     
                     // LLM 추론 초기화
                     await llamaContext.completionInit(text: formattedPrompt)
@@ -450,6 +579,26 @@ class LlamaManager: ObservableObject {
                     continuation.finish()
                 #endif
             }
+        }
+    }
+}
+
+// MARK: - CLLocationManagerDelegate
+extension LlamaManager: CLLocationManagerDelegate {
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        if let location = locations.last {
+            currentLocation = location
+        }
+    }
+    
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        print("❌ 위치 정보 가져오기 실패: \(error.localizedDescription)")
+    }
+    
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let status = manager.authorizationStatus
+        if status == .authorizedWhenInUse || status == .authorizedAlways {
+            manager.startUpdatingLocation()
         }
     }
 }
