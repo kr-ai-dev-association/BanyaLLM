@@ -69,8 +69,9 @@ actor LlamaContext {
         model_params.n_gpu_layers = 0
         print("📱 시뮬레이터: CPU 모드")
         #else
-        model_params.n_gpu_layers = 999  // MPS 가속 사용
-        print("⚡ 실제 기기: MPS GPU 가속 활성화")
+        // GPU 메모리 부족 방지: 일부 레이어만 GPU에 로드
+        model_params.n_gpu_layers = 24  // 33개 중 24개만 GPU (약 70%)
+        print("⚡ 실제 기기: 하이브리드 모드 (GPU: 24레이어, CPU: 9레이어)")
         #endif
         
         guard let loadedModel = llama_model_load_from_file(modelPath, model_params) else {
@@ -83,9 +84,11 @@ actor LlamaContext {
         print("🧵 스레드 수: \(n_threads)")
         
         var ctx_params = llama_context_default_params()
-        ctx_params.n_ctx = 2048
+        ctx_params.n_ctx = 1024  // 2048 → 1024로 줄여서 메모리 절약
         ctx_params.n_threads = Int32(n_threads)
         ctx_params.n_threads_batch = Int32(n_threads)
+        
+        print("🎛️ 컨텍스트 크기: 1024 (메모리 최적화)")
         
         guard let loadedContext = llama_init_from_model(loadedModel, ctx_params) else {
             print("❌ 컨텍스트 초기화 실패")
