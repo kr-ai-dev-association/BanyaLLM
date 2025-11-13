@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct ChatView: View {
     @StateObject private var viewModel = ChatViewModel()
@@ -87,12 +88,7 @@ struct ChatView: View {
                         }
                     }
                     .onChange(of: viewModel.isLoading) { oldValue, newValue in
-                        // 로딩이 끝나면 (true -> false) 입력 필드에 포커스
-                        if oldValue == true && newValue == false {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                isInputFocused = true
-                            }
-                        }
+                        // 로딩이 끝나도 포커스를 자동으로 주지 않음 (키보드가 나타나지 않도록)
                     }
                 }
                 
@@ -108,25 +104,17 @@ struct ChatView: View {
                         .focused($isInputFocused)
                         .submitLabel(.send)
                         .onSubmit {
-                            // 키보드 숨기기
-                            isInputFocused = false
+                            // 키보드 강제로 숨기기
+                            hideKeyboard()
                             // 메시지 전송
                             viewModel.sendMessage()
-                            // 약간의 딜레이 후 포커스 복원 (키보드는 나타나지 않음)
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                isInputFocused = true
-                            }
                         }
                     
                     Button(action: {
-                        // 키보드 숨기기
-                        isInputFocused = false
+                        // 키보드 강제로 숨기기
+                        hideKeyboard()
                         // 메시지 전송
                         viewModel.sendMessage()
-                        // 약간의 딜레이 후 포커스 복원 (키보드는 나타나지 않음)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            isInputFocused = true
-                        }
                     }) {
                         Image(systemName: "arrow.up.circle.fill")
                             .resizable()
@@ -156,6 +144,11 @@ struct ChatView: View {
                 ModelPickerView(llamaManager: viewModel.llamaManager)
             }
         }
+    }
+    
+    // 키보드 숨기기 헬퍼 함수
+    private func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 }
 
