@@ -167,31 +167,18 @@ actor LlamaContext {
     }
     
     func completionLoop() -> String {
-        print("🔁 completionLoop 진입")
-        
         guard let context = context,
               let sampling = sampling,
               let vocab = vocab else {
-            print("❌ context/sampling/vocab 중 nil 발견")
             isDone = true
             return ""
         }
         
-        print("🎲 샘플링 시작 (batch.n_tokens: \(batch.n_tokens))")
         let new_token_id = llama_sampler_sample(sampling, context, batch.n_tokens - 1)
-        print("🎲 샘플링 완료: 토큰 ID = \(new_token_id)")
         
-        // EOG 토큰 감지 (llama_token_is_eog 사용)
-        print("🔍 EOG 감지 시작...")
-        guard let model = model else {
-            print("❌ model이 nil")
-            isDone = true
-            return ""
-        }
-        
-        print("🔍 llama_token_is_eog 호출 중...")
-        let isEOG = llama_token_is_eog(model, new_token_id)
-        print("🔍 llama_token_is_eog 완료: \(isEOG)")
+        // EOG 토큰 감지 (Llama 3.1 EOG 토큰 ID 직접 비교)
+        // 128001: <|end_of_text|>, 128008: <|eom_id|>, 128009: <|eot_id|>
+        let isEOG = (new_token_id == 128001 || new_token_id == 128008 || new_token_id == 128009)
         
         if isEOG || n_cur == n_len {
             print("✅ 생성 완료 (EOG: \(isEOG), 토큰: \(n_cur)개)")
@@ -201,9 +188,7 @@ actor LlamaContext {
             return new_token_str
         }
         
-        print("🔤 token_to_piece 호출 중...")
         let new_token_cchars = token_to_piece(token: new_token_id)
-        print("🔤 token_to_piece 완료: \(new_token_cchars.count)바이트")
         temporary_invalid_cchars.append(contentsOf: new_token_cchars)
         let new_token_str: String
         if let string = String(validatingUTF8: temporary_invalid_cchars + [0]) {
@@ -217,25 +202,18 @@ actor LlamaContext {
             new_token_str = string
         } else {
             new_token_str = ""
-            print("⏳ UTF8 대기 중...")
         }
         
-        print("🔄 배치 업데이트 중...")
         llama_batch_clear(&batch)
         llama_batch_add(&batch, new_token_id, n_cur, [0], true)
-        print("🔄 배치 업데이트 완료")
         
         n_decode += 1
         n_cur += 1
         
-        print("🔄 llama_decode 호출 중...")
         if llama_decode(context, batch) != 0 {
             print("❌ llama_decode 실패!")
-        } else {
-            print("✅ llama_decode 성공")
         }
         
-        print("🎁 토큰 반환: '\(new_token_str)'")
         return new_token_str
     }
     
