@@ -26,6 +26,14 @@ class LlamaManager: ObservableObject {
     }
     
     func loadModel() async {
+        #if targetEnvironment(simulator)
+        // 시뮬레이터에서는 모델 로딩 스킵 (파일 접근 제한)
+        print("📱 시뮬레이터 감지: 시뮬레이션 모드 사용")
+        isModelLoaded = true
+        loadingProgress = "시뮬레이션 모드"
+        return
+        #else
+        
         do {
             // 모델 파일 경로 찾기
             let modelPath = try getModelPath()
@@ -37,7 +45,7 @@ class LlamaManager: ObservableObject {
             try await llamaContext?.initialize()
             
             isModelLoaded = true
-            loadingProgress = "모델 로드 완료"
+            loadingProgress = "모델 로드 완료 (실제 LLM)"
             print("✅ 모델이 성공적으로 로드되었습니다: \(modelPath)")
             
         } catch {
@@ -45,6 +53,7 @@ class LlamaManager: ObservableObject {
             loadingProgress = "모델 로드 실패: \(error.localizedDescription)"
             print("❌ 모델 로드 실패: \(error)")
         }
+        #endif
     }
     
     private func getModelPath() throws -> String {
@@ -81,8 +90,28 @@ class LlamaManager: ObservableObject {
     func generate(prompt: String) async -> AsyncStream<String> {
         return AsyncStream { continuation in
             Task {
+                #if targetEnvironment(simulator)
+                // 시뮬레이터: 간단한 응답 생성
+                let responses = [
+                    "안녕하세요! 저는 BanyaLLM입니다.",
+                    "\n\n",
+                    "현재 시뮬레이터에서 실행 중이라 시뮬레이션 모드로 동작합니다.",
+                    "\n\n",
+                    "실제 LLM을 사용하려면 iPhone이나 iPad 실제 기기에서 실행해주세요!",
+                    "\n\n",
+                    "질문: \"\(prompt)\""
+                ]
+                
+                for token in responses {
+                    continuation.yield(token)
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                }
+                continuation.finish()
+                #else
+                
                 guard let llamaContext = self.llamaContext else {
                     print("❌ LlamaContext가 초기화되지 않았습니다")
+                    continuation.yield("모델이 로드되지 않았습니다. 앱을 재시작해주세요.")
                     continuation.finish()
                     return
                 }
@@ -104,6 +133,7 @@ class LlamaManager: ObservableObject {
                 // 추론 완료 후 정리
                 await llamaContext.clear()
                 continuation.finish()
+                #endif
             }
         }
     }

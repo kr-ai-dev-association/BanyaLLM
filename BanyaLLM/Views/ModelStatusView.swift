@@ -30,14 +30,26 @@ struct ModelStatusView: View {
                 }
             }
             
-            // 시뮬레이션 모드 표시
-            Text("⚠️ 시뮬레이션 모드 (llama.cpp 통합 필요)")
+            // 시뮬레이터/실제 기기 구분 표시
+            #if targetEnvironment(simulator)
+            Text("📱 시뮬레이터 모드 (실제 기기에서 LLM 사용 가능)")
                 .font(.caption2)
-                .foregroundColor(.orange)
+                .foregroundColor(.blue)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(Color.orange.opacity(0.1))
+                .background(Color.blue.opacity(0.1))
                 .cornerRadius(8)
+            #else
+            if llamaManager.isModelLoaded {
+                Text("⚡ 실제 LLM 모드 (MPS 가속)")
+                    .font(.caption2)
+                    .foregroundColor(.green)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.green.opacity(0.1))
+                    .cornerRadius(8)
+            }
+            #endif
         }
         .padding(.vertical, 8)
     }
