@@ -426,22 +426,35 @@ class LlamaManager: NSObject, ObservableObject {
                     // Llama 3.1 Chat Template 적용 (검색 결과 및 이전 대화 포함)
                     let formattedPrompt = self.formatChatPrompt(userMessage: prompt, searchResults: searchResults, previousTurns: previousTurns)
                     
-                    // LLM 추론 초기화
-                    await llamaContext.completionInit(text: formattedPrompt)
-                    
                     // 첫 번째 토큰이 도착하기 전까지 "..." 애니메이션 표시
                     class TokenReceivedFlag {
                         var value = false
                     }
                     let isFirstTokenReceived = TokenReceivedFlag()
                     let animationTask = Task {
-                        let dots = [".", "..", "..."]
-                        var index = 0
+                        // "..."를 깜빡이는 효과로 표시
                         while !isFirstTokenReceived.value && !Task.isCancelled {
-                            continuation.yield(dots[index])
-                            index = (index + 1) % dots.count
+                            continuation.yield("...")
                             try? await Task.sleep(nanoseconds: 500_000_000) // 0.5초 간격
                         }
+                    }
+                    
+                    // LLM 추론 초기화
+                    do {
+                        try await llamaContext.completionInit(text: formattedPrompt)
+                    } catch LlamaError.batchSizeExceeded {
+                        // 배치 크기 초과 오류 발생 - 대화 히스토리 삭제 및 에러 메시지 반환
+                        self.conversationHistory.clearHistory()
+                        animationTask.cancel()
+                        continuation.yield("메모리 초과로 대화가 중단 되었습니다. 다시 질문해 주세요.")
+                        continuation.finish()
+                        return
+                    } catch {
+                        // 기타 오류
+                        animationTask.cancel()
+                        continuation.yield("오류가 발생했습니다. 다시 시도해 주세요.")
+                        continuation.finish()
+                        return
                     }
                     
                     // 스트리밍 응답 생성 (강화된 특수 토큰 필터링)
@@ -591,7 +604,23 @@ class LlamaManager: NSObject, ObservableObject {
                     }
                     
                     while await !llamaContext.isDone {
-                        let token = await llamaContext.completionLoop()
+                        let token: String
+                        do {
+                            token = try await llamaContext.completionLoop()
+                        } catch LlamaError.batchSizeExceeded {
+                            // 배치 크기 초과 오류 발생 - 대화 히스토리 삭제 및 에러 메시지 반환
+                            if !isFirstTokenReceived.value {
+                                isFirstTokenReceived.value = true
+                                animationTask.cancel()
+                            }
+                            self.conversationHistory.clearHistory()
+                            continuation.yield("메모리 초과로 대화가 중단 되었습니다. 다시 질문해 주세요.")
+                            continuation.finish()
+                            return
+                        } catch {
+                            // 기타 오류 - 계속 진행
+                            continue
+                        }
                         
                         if !token.isEmpty {
                             // 첫 번째 토큰 도착 - 애니메이션 중지

@@ -11,6 +11,7 @@ enum LlamaError: Error {
     case couldNotInitializeContext
     case modelNotFound
     case failedToLoadModel
+    case batchSizeExceeded  // 배치 크기 초과 오류
 }
 
 // Helper functions for llama_batch
@@ -45,6 +46,7 @@ actor LlamaContext {
     private var batch: llama_batch
     private var tokens_list: [llama_token] = []
     private var temporary_invalid_cchars: [CChar] = []
+    private var lastBatchSize: Int32 = 0  // 이전 batch의 크기 추적 (llama_sampler_sample용)
     
     var isDone: Bool = false
     var n_len: Int32 = 256   // 최대 생성 토큰 수 (적절한 길이의 응답, 5-8문장)
@@ -60,8 +62,8 @@ actor LlamaContext {
     
     init(modelPath: String) {
         self.modelPath = modelPath
-        // batch 크기를 16384로 늘려서 매우 긴 프롬프트 처리 가능하도록 함
-        self.batch = llama_batch_init(16384, 0, 1)
+        // batch 크기를 32768로 늘려서 매우 긴 프롬프트 처리 가능하도록 함
+        self.batch = llama_batch_init(32768, 0, 1)
     }
     
     func initialize() throws {
@@ -98,11 +100,11 @@ actor LlamaContext {
         
         var ctx_params = llama_context_default_params()
         ctx_params.n_ctx = 1024  // 2048 → 1024로 줄여서 메모리 절약
-        ctx_params.n_batch = 16384  // batch 크기: 매우 긴 프롬프트 처리 가능 (웹 검색 결과 포함)
+        ctx_params.n_batch = 32768  // batch 크기: 매우 긴 프롬프트 처리 가능 (웹 검색 결과 포함)
         ctx_params.n_threads = Int32(n_threads)
         ctx_params.n_threads_batch = Int32(n_threads)
         
-        // print("🎛️ 컨텍스트 크기: 1024, Batch 크기: 16384 (매우 긴 프롬프트 처리)")
+        // print("🎛️ 컨텍스트 크기: 1024, Batch 크기: 32768 (매우 긴 프롬프트 처리)")
         
         guard let loadedContext = llama_init_from_model(loadedModel, ctx_params) else {
             // print("❌ 컨텍스트 초기화 실패")
@@ -144,7 +146,7 @@ actor LlamaContext {
         // print("✅ llama.cpp 모델 로드 완료!")
     }
     
-    func completionInit(text: String) {
+    func completionInit(text: String) throws {
         // print("🚀 추론 시작")
         
         guard let context = context else { 
@@ -167,8 +169,8 @@ actor LlamaContext {
         
         llama_batch_clear(&batch)
         
-        // batch 크기 제한 확인 (16384)
-        let maxBatchSize = 16384
+        // batch 크기 제한 확인 (32768)
+        let maxBatchSize = 32768
         if tokens_list.count > maxBatchSize {
             // print("⚠️ 경고: 토큰 수(\(tokens_list.count))가 batch 크기(\(maxBatchSize))를 초과합니다. 처음 \(maxBatchSize)개만 사용합니다.")
         }
@@ -190,21 +192,24 @@ actor LlamaContext {
             batch.logits[Int(batch.n_tokens) - 1] = 1
             
             if llama_decode(context, batch) != 0 {
-                // print("❌ llama_decode() 실패")
+                // print("❌ llama_decode() 실패 - 배치 크기 초과 가능성")
+                throw LlamaError.batchSizeExceeded
             }
             
             // n_cur을 실제로 batch에 추가되고 decode된 토큰 수로 설정 (KV cache 위치와 일치)
             // batch.n_tokens는 실제로 처리된 토큰 수
             n_cur = Int32(batch.n_tokens)
+            lastBatchSize = batch.n_tokens  // 마지막 batch 크기 저장
         } else {
             // print("❌ batch에 토큰이 없습니다!")
             n_cur = 0
+            lastBatchSize = 0
         }
         
         isDone = false
     }
     
-    func completionLoop() -> String {
+    func completionLoop() throws -> String {
         guard let context = context,
               let sampling = sampling,
               let vocab = vocab else {
@@ -212,10 +217,12 @@ actor LlamaContext {
             return ""
         }
         
-        // llama_sampler_sample의 세 번째 파라미터는 KV cache의 마지막 토큰 position
-        // n_cur은 다음에 추가할 토큰의 position이므로, 현재 마지막 토큰은 n_cur - 1
-        let lastTokenPos = max(0, n_cur - 1)
-        let new_token_id = llama_sampler_sample(sampling, context, lastTokenPos)
+        // llama_sampler_sample의 세 번째 파라미터는 이전 decode의 마지막 토큰 인덱스
+        // batch를 clear하기 전의 마지막 토큰 인덱스를 사용해야 함
+        // lastBatchSize는 이전 decode에서 처리된 토큰 수이므로, 마지막 인덱스는 lastBatchSize - 1
+        // 하지만 첫 번째 루프에서는 completionInit에서 decode된 batch의 마지막 인덱스를 사용
+        let lastTokenIdx = max(0, lastBatchSize > 0 ? lastBatchSize - 1 : max(0, n_cur - 1))
+        let new_token_id = llama_sampler_sample(sampling, context, lastTokenIdx)
         
         // EOG 토큰 감지 (Llama 3.1 EOG 토큰 ID 직접 비교)
         // 128001: <|end_of_text|>, 128008: <|eom_id|>, 128009: <|eot_id|>
@@ -239,8 +246,12 @@ actor LlamaContext {
             n_cur += 1
             
             if llama_decode(context, batch) != 0 {
-                // print("❌ llama_decode 실패!")
+                // print("❌ llama_decode 실패 - 배치 크기 초과 가능성")
+                throw LlamaError.batchSizeExceeded
             }
+            
+            // batch 크기 업데이트 (새로운 토큰이 추가되었으므로 1)
+            lastBatchSize = 1
             
             return "" // 빈 문자열 반환 (특수 토큰은 출력 안 함)
         }
@@ -328,8 +339,12 @@ actor LlamaContext {
         n_cur += 1
         
         if llama_decode(context, batch) != 0 {
-            // print("❌ llama_decode 실패!")
+            // print("❌ llama_decode 실패 - 배치 크기 초과 가능성")
+            throw LlamaError.batchSizeExceeded
         }
+        
+        // batch 크기 업데이트 (새로운 토큰이 추가되었으므로 1)
+        lastBatchSize = 1
         
         // 생성된 토큰 로그 출력 (디버깅용)
         // if !new_token_str.isEmpty {
@@ -347,6 +362,7 @@ actor LlamaContext {
         llama_memory_clear(llama_get_memory(context), true)
         n_cur = 0
         n_decode = 0
+        lastBatchSize = 0
         isDone = false
     }
     
