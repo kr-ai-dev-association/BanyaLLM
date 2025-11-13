@@ -26,34 +26,47 @@ class LlamaManager: ObservableObject {
     }
     
     func loadModel() async {
-        #if targetEnvironment(simulator)
-        // 시뮬레이터에서는 모델 로딩 스킵 (파일 접근 제한)
-        print("📱 시뮬레이터 감지: 시뮬레이션 모드 사용")
-        isModelLoaded = true
-        loadingProgress = "시뮬레이션 모드"
-        return
-        #else
-        
         do {
-            // 모델 파일 경로 찾기
-            let modelPath = try getModelPath()
+            // 저장된 모델 경로 확인
+            if let savedPath = UserDefaults.standard.string(forKey: "selectedModelPath"),
+               FileManager.default.fileExists(atPath: savedPath) {
+                print("💾 저장된 모델 경로 사용: \(savedPath)")
+                await loadModelFromPath(savedPath)
+                return
+            }
             
+            // 기본 경로에서 모델 찾기
+            let modelPath = try getModelPath()
+            await loadModelFromPath(modelPath)
+            
+        } catch {
+            isModelLoaded = false
+            loadingProgress = "모델 파일을 선택해주세요"
+            print("ℹ️ 모델 파일 선택 필요")
+        }
+    }
+    
+    func loadModelFromPath(_ path: String) async {
+        do {
             loadingProgress = "모델 로딩 중..."
+            print("📂 모델 로드 시작: \(path)")
             
             // LlamaContext 생성 및 초기화
-            llamaContext = LlamaContext(modelPath: modelPath)
+            llamaContext = LlamaContext(modelPath: path)
             try await llamaContext?.initialize()
             
             isModelLoaded = true
-            loadingProgress = "모델 로드 완료 (실제 LLM)"
-            print("✅ 모델이 성공적으로 로드되었습니다: \(modelPath)")
+            loadingProgress = "모델 로드 완료"
+            print("✅ 모델이 성공적으로 로드되었습니다")
+            
+            // 성공 시 경로 저장
+            UserDefaults.standard.set(path, forKey: "selectedModelPath")
             
         } catch {
             isModelLoaded = false
             loadingProgress = "모델 로드 실패: \(error.localizedDescription)"
             print("❌ 모델 로드 실패: \(error)")
         }
-        #endif
     }
     
     private func getModelPath() throws -> String {

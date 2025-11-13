@@ -10,13 +10,27 @@ import SwiftUI
 struct ChatView: View {
     @StateObject private var viewModel = ChatViewModel()
     @FocusState private var isInputFocused: Bool
+    @State private var showModelPicker = false
     
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 // 모델 상태 표시
-                ModelStatusView(llamaManager: viewModel.llamaManager)
-                    .padding(.horizontal)
+                HStack {
+                    ModelStatusView(llamaManager: viewModel.llamaManager)
+                    
+                    Spacer()
+                    
+                    if !viewModel.llamaManager.isModelLoaded {
+                        Button(action: {
+                            showModelPicker = true
+                        }) {
+                            Image(systemName: "folder.badge.plus")
+                                .foregroundColor(.blue)
+                        }
+                    }
+                }
+                .padding(.horizontal)
                 
                 Divider()
                 
@@ -72,6 +86,14 @@ struct ChatView: View {
                             }
                         }
                     }
+                    .onChange(of: viewModel.isLoading) { oldValue, newValue in
+                        // 로딩이 끝나면 (true -> false) 입력 필드에 포커스
+                        if oldValue == true && newValue == false {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                isInputFocused = true
+                            }
+                        }
+                    }
                 }
                 
                 // 입력 필드
@@ -115,6 +137,9 @@ struct ChatView: View {
                             .foregroundColor(.red)
                     }
                 }
+            }
+            .sheet(isPresented: $showModelPicker) {
+                ModelPickerView(llamaManager: viewModel.llamaManager)
             }
         }
     }
