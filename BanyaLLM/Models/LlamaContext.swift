@@ -62,8 +62,8 @@ actor LlamaContext {
     
     init(modelPath: String) {
         self.modelPath = modelPath
-        // batch 크기를 32768로 늘려서 매우 긴 프롬프트 처리 가능하도록 함
-        self.batch = llama_batch_init(32768, 0, 1)
+        // batch 크기를 n_ctx와 동일하게 설정 (2048)
+        self.batch = llama_batch_init(2048, 0, 1)
     }
     
     func initialize() throws {
@@ -99,12 +99,12 @@ actor LlamaContext {
         // print("🧵 스레드 수: \(n_threads)")
         
         var ctx_params = llama_context_default_params()
-        ctx_params.n_ctx = 1024  // 2048 → 1024로 줄여서 메모리 절약
-        ctx_params.n_batch = 32768  // batch 크기: 매우 긴 프롬프트 처리 가능 (웹 검색 결과 포함)
+        ctx_params.n_ctx = 2048  // 컨텍스트 윈도우 크기 (2배 증가)
+        ctx_params.n_batch = 2048  // batch 크기: n_ctx와 동일하게 설정 (n_batch <= n_ctx)
         ctx_params.n_threads = Int32(n_threads)
         ctx_params.n_threads_batch = Int32(n_threads)
         
-        // print("🎛️ 컨텍스트 크기: 1024, Batch 크기: 32768 (매우 긴 프롬프트 처리)")
+        // print("🎛️ 컨텍스트 크기: 2048, Batch 크기: 2048 (n_ctx와 동일)")
         
         guard let loadedContext = llama_init_from_model(loadedModel, ctx_params) else {
             // print("❌ 컨텍스트 초기화 실패")
@@ -169,8 +169,8 @@ actor LlamaContext {
         
         llama_batch_clear(&batch)
         
-        // batch 크기 제한 확인 (32768)
-        let maxBatchSize = 32768
+        // batch 크기 제한 확인 (n_ctx와 동일)
+        let maxBatchSize = Int(n_ctx)
         if tokens_list.count > maxBatchSize {
             // print("⚠️ 경고: 토큰 수(\(tokens_list.count))가 batch 크기(\(maxBatchSize))를 초과합니다. 처음 \(maxBatchSize)개만 사용합니다.")
         }
@@ -359,6 +359,7 @@ actor LlamaContext {
         
         tokens_list.removeAll()
         temporary_invalid_cchars.removeAll()
+        llama_batch_clear(&batch)  // batch 초기화
         llama_memory_clear(llama_get_memory(context), true)
         n_cur = 0
         n_decode = 0

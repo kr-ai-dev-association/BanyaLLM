@@ -447,14 +447,16 @@ class LlamaManager: NSObject, ObservableObject {
                     do {
                         try await llamaContext.completionInit(text: formattedPrompt)
                     } catch LlamaError.batchSizeExceeded {
-                        // 배치 크기 초과 오류 발생 - 대화 히스토리 삭제 및 에러 메시지 반환
-                        self.conversationHistory.clearHistory()
+                        // 배치 크기 초과 오류 발생 - 컨텍스트 초기화 및 대화 히스토리 삭제
+                        await llamaContext.clear()  // 컨텍스트 상태 초기화
+                        self.conversationHistory.clearHistory()  // 대화 히스토리 삭제
                         animationTask.cancel()
                         continuation.yield("메모리 초과로 대화가 중단 되었습니다. 다시 질문해 주세요.")
                         continuation.finish()
                         return
                     } catch {
-                        // 기타 오류
+                        // 기타 오류 - 컨텍스트 초기화
+                        await llamaContext.clear()
                         animationTask.cancel()
                         continuation.yield("오류가 발생했습니다. 다시 시도해 주세요.")
                         continuation.finish()
@@ -638,12 +640,13 @@ class LlamaManager: NSObject, ObservableObject {
                         do {
                             token = try await llamaContext.completionLoop()
                         } catch LlamaError.batchSizeExceeded {
-                            // 배치 크기 초과 오류 발생 - 대화 히스토리 삭제 및 에러 메시지 반환
+                            // 배치 크기 초과 오류 발생 - 컨텍스트 초기화 및 대화 히스토리 삭제
                             if !isFirstTokenReceived.value {
                                 isFirstTokenReceived.value = true
                                 animationTask.cancel()
                             }
-                            self.conversationHistory.clearHistory()
+                            await llamaContext.clear()  // 컨텍스트 상태 초기화
+                            self.conversationHistory.clearHistory()  // 대화 히스토리 삭제
                             continuation.yield("메모리 초과로 대화가 중단 되었습니다. 다시 질문해 주세요.")
                             continuation.finish()
                             return
