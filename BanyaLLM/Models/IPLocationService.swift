@@ -10,7 +10,7 @@ import CoreLocation
 
 /// IP 기반 위치 서비스
 class IPLocationService {
-    private let baseURL = "http://ip-api.com/json"
+    private let baseURL = "https://ip-api.com/json"
     
     /// IP 주소를 기반으로 위치 정보 가져오기
     /// - Returns: 위치 정보 (도시, 국가, 위도, 경도)

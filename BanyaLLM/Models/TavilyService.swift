@@ -12,7 +12,7 @@ class TavilyService {
     private let apiKey: String
     private let baseURL = "https://api.tavily.com/search"
     
-    init(apiKey: String) {
+    init(apiKey: String = "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") {
         self.apiKey = apiKey
     }
     
@@ -29,7 +29,7 @@ class TavilyService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
         let requestBody: [String: Any] = [
-            "api_key": "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",
+            "api_key": apiKey,
             "query": query,
             "search_depth": "basic",
             "max_results": 5
