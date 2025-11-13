@@ -188,6 +188,23 @@ actor LlamaContext {
             return new_token_str
         }
         
+        // 특수 토큰 필터링 (Llama 3.1 특수 토큰은 출력하지 않음)
+        // 128000-128255: 모든 특수 토큰 범위
+        if new_token_id >= 128000 {
+            // 특수 토큰은 배치에 추가하지만 출력하지 않음
+            llama_batch_clear(&batch)
+            llama_batch_add(&batch, new_token_id, n_cur, [0], true)
+            
+            n_decode += 1
+            n_cur += 1
+            
+            if llama_decode(context, batch) != 0 {
+                print("❌ llama_decode 실패!")
+            }
+            
+            return "" // 빈 문자열 반환 (특수 토큰은 출력 안 함)
+        }
+        
         let new_token_cchars = token_to_piece(token: new_token_id)
         temporary_invalid_cchars.append(contentsOf: new_token_cchars)
         let new_token_str: String
