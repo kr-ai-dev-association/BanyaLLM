@@ -7,6 +7,7 @@
 
 import Foundation
 import CoreLocation
+import Network
 
 @MainActor
 class LlamaManager: NSObject, ObservableObject {
@@ -24,12 +25,16 @@ class LlamaManager: NSObject, ObservableObject {
     private var currentLocation: CLLocation?
     private var ipLocation: IPLocation?
     private let ipLocationService = IPLocationService()
+    private let networkMonitor = NWPathMonitor()
+    private var isNetworkAvailable = false
     
     // Llama 3.1 System Prompt (10대 발달장애인 지원 에이전트)
     private let systemPrompt = """
 너는 10대 발달장애인의 일상을 돕는 한국어 에이전트다. 말은 간단하고 짧게 한다. 한 번에 한 단계씩 안내한다. 위급한 상황이라고 판단될 경우 즉시 보호자나 119에 연락하도록 안내한다. 복잡한 요청은 다시 확인하고 필요한 정보를 먼저 묻는다. 일정 관리, 준비물 체크, 이동 안내, 감정 조절 도움, 사회적 상황 대처 연습을 친절하게 돕는게 너의 제일 큰 역할이야. 물결표와 이모티콘, 과도한 문장부호(!!!, .. 등)는 사용하지 않는다. 문장부호는 최대 1개만 사용한다. 그리고 최대한 친절하게 대답하고 친근하게 대답해.
 
-중요: 사용자가 제공하는 현재 날짜, 시간, 위치 정보는 내부적으로만 활용하고, 절대 사용자에게 명시적으로 언급하거나 출력하지 않는다. 예를 들어 "현재 날짜는 2025년 11월 13일입니다" 같은 식으로 말하지 않는다. 대신 이 정보를 활용하여 질문에 자연스럽게 답변한다. 날씨, 현재 시간 기반 일정, 위치 기반 정보 등이 필요하면 웹 검색을 통해 최신 정보를 찾아 답변해야 한다.
+중요: 사용자가 제공하는 현재 날짜, 시간, 위치 정보는 내부적으로만 활용하고, 절대 사용자에게 명시적으로 언급하거나 출력하지 않는다. 예를 들어 "현재 날짜는 2025년 11월 13일입니다" 같은 식으로 말하지 않는다. 대신 이 정보를 활용하여 질문에 자연스럽게 답변한다.
+
+웹 검색 결과가 제공되면, 반드시 그 결과를 기반으로 사용자의 질문에 맞게 내용을 재조립하여 답변해야 한다. 검색 결과의 정보를 그대로 나열하지 말고, 사용자의 질의에 맞게 자연스럽게 재구성하여 제공한다. 웹 검색 결과가 없거나 인터넷이 연결되지 않은 경우에만 자신의 지식으로 답변한다.
 """
     
     // Tavily API 키 설정 (환경 변수나 설정에서 가져올 수 있음)
@@ -44,6 +49,9 @@ class LlamaManager: NSObject, ObservableObject {
     }
     
     func initialize() {
+        // 네트워크 연결 상태 모니터링 시작
+        startNetworkMonitoring()
+        
         Task {
             await loadModel()
             await requestLocationPermission()
@@ -52,6 +60,26 @@ class LlamaManager: NSObject, ObservableObject {
                 await fetchIPLocation()
             }
         }
+    }
+    
+    /// 네트워크 연결 상태 모니터링 시작
+    private func startNetworkMonitoring() {
+        let queue = DispatchQueue(label: "NetworkMonitor")
+        networkMonitor.pathUpdateHandler = { [weak self] path in
+            Task { @MainActor in
+                self?.isNetworkAvailable = path.status == .satisfied
+                print("🌐 네트워크 상태: \(path.status == .satisfied ? "연결됨" : "연결 안 됨")")
+            }
+        }
+        networkMonitor.start(queue: queue)
+        
+        // 초기 상태 확인
+        isNetworkAvailable = networkMonitor.currentPath.status == .satisfied
+    }
+    
+    /// 네트워크 연결 상태 확인
+    private func checkNetworkConnection() -> Bool {
+        return networkMonitor.currentPath.status == .satisfied
     }
     
     /// IP 기반 위치 정보 가져오기 (위치 권한이 없을 때 사용)
@@ -167,28 +195,6 @@ class LlamaManager: NSObject, ObservableObject {
         return formattedPrompt
     }
     
-    /// 사용자 질문이 웹 검색이 필요한지 판단
-    private func needsWebSearch(_ query: String) -> Bool {
-        let searchKeywords = [
-            "날씨", "뉴스", "최신", "현재", "오늘", "지금",
-            "어떻게", "무엇", "언제", "어디", "누가", "왜",
-            "검색", "찾아", "알려", "정보"
-        ]
-        
-        let lowercased = query.lowercased()
-        return searchKeywords.contains { lowercased.contains($0) }
-    }
-    
-    /// LLM 응답이 "모르는 정보"를 나타내는지 체크
-    private func indicatesUnknownInfo(_ response: String) -> Bool {
-        let unknownPatterns = [
-            "알 수 없", "모르", "정보 없", "확실하지 않",
-            "죄송하지만", "제가 모르는", "알지 못"
-        ]
-        
-        let lowercased = response.lowercased()
-        return unknownPatterns.contains { lowercased.contains($0) }
-    }
     
     func loadModel() async {
         do {
@@ -314,23 +320,33 @@ class LlamaManager: NSObject, ObservableObject {
                         return
                     }
                     
-                    // 웹 검색이 필요한지 판단
+                    // 네트워크 연결 상태 확인 및 웹 검색
                     var searchResults: [SearchResult]? = nil
-                    if let tavilyService = self.tavilyService, self.needsWebSearch(prompt) {
-                        print("🔍 웹 검색이 필요합니다. Tavily로 검색 중...")
-                        continuation.yield("검색 중... ")
-                        
-                        do {
-                            searchResults = try await tavilyService.search(query: prompt)
-                            if let results = searchResults, !results.isEmpty {
-                                print("✅ 검색 결과 \(results.count)개 발견")
-                            } else {
-                                print("⚠️ 검색 결과 없음")
+                    let isConnected = self.checkNetworkConnection()
+                    
+                    if isConnected {
+                        // 인터넷 연결되어 있으면 무조건 웹 검색
+                        if let tavilyService = self.tavilyService {
+                            print("🔍 인터넷 연결됨: Tavily로 웹 검색 중...")
+                            continuation.yield("검색 중... ")
+                            
+                            do {
+                                searchResults = try await tavilyService.search(query: prompt)
+                                if let results = searchResults, !results.isEmpty {
+                                    print("✅ 검색 결과 \(results.count)개 발견")
+                                } else {
+                                    print("⚠️ 검색 결과 없음")
+                                }
+                            } catch {
+                                print("❌ Tavily 검색 실패: \(error)")
+                                // 검색 실패해도 LLM 응답은 계속 진행
                             }
-                        } catch {
-                            print("❌ Tavily 검색 실패: \(error)")
-                            // 검색 실패해도 LLM 응답은 계속 진행
+                        } else {
+                            print("⚠️ Tavily API 키가 설정되지 않았습니다. LLM 자체 지식으로 답변합니다.")
                         }
+                    } else {
+                        // 인터넷 연결 안 됨: LLM 자체 지식으로 답변
+                        print("📴 인터넷 연결 안 됨: LLM 자체 지식으로 답변합니다.")
                     }
                     
                     // Llama 3.1 Chat Template 적용 (검색 결과 포함)
