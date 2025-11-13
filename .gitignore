@@ -91,4 +91,6 @@ iOSInjectionProject/
 
 # LLM Model Files
 BanyaLLM/Assets.xcassets/llama31-banyaa-q4_k_m.gguf
+BanyaLLM/llama31-banyaa-q4_k_m.gguf
+*.gguf
 

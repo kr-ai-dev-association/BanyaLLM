@@ -14,6 +14,14 @@ class ChatViewModel: ObservableObject {
     @Published var inputText: String = ""
     @Published var isLoading: Bool = false
     
+    private let llamaManager: LlamaManager
+    
+    init(llamaManager: LlamaManager = LlamaManager()) {
+        self.llamaManager = llamaManager
+        // 모델 초기화
+        self.llamaManager.initialize()
+    }
+    
     func sendMessage() {
         guard !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return
@@ -27,28 +35,30 @@ class ChatViewModel: ObservableObject {
         
         isLoading = true
         
-        // LLM 응답 시뮬레이션 (실제 LLM API 연동 시 여기를 수정하세요)
+        // LLM으로 응답 생성
         Task {
-            try? await Task.sleep(nanoseconds: 1_000_000_000) // 1초 대기
+            var aiResponse = ""
+            let aiMessageIndex = messages.count
             
-            let response = generateResponse(for: userInput)
-            let aiMessage = ChatMessage(content: response, isUser: false)
+            // 빈 AI 메시지 추가 (스트리밍을 위해)
+            let aiMessage = ChatMessage(content: "", isUser: false)
             messages.append(aiMessage)
+            
+            // LLM 스트리밍 응답
+            for await token in await llamaManager.generate(prompt: userInput) {
+                aiResponse += token
+                // 메시지 업데이트
+                if aiMessageIndex < messages.count {
+                    messages[aiMessageIndex] = ChatMessage(
+                        content: aiResponse,
+                        isUser: false,
+                        timestamp: messages[aiMessageIndex].timestamp
+                    )
+                }
+            }
             
             isLoading = false
         }
-    }
-    
-    private func generateResponse(for input: String) -> String {
-        // TODO: 실제 LLM API 호출로 대체
-        let responses = [
-            "안녕하세요! 무엇을 도와드릴까요?",
-            "좋은 질문이네요. 더 자세히 설명해주시겠어요?",
-            "알겠습니다. 제가 도움을 드릴 수 있습니다.",
-            "흥미로운 주제네요! 더 많이 알려주세요.",
-            "네, 이해했습니다. 다른 궁금한 점이 있으신가요?"
-        ]
-        return responses.randomElement() ?? "답변을 생성하는 중입니다."
     }
     
     func clearMessages() {
