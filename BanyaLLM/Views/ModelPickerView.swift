@@ -153,17 +153,23 @@ struct ModelPickerView: View {
             return
         }
         
-        // 모델 경로 저장 및 로드
-        UserDefaults.standard.set(url.path, forKey: "selectedModelPath")
-        UserDefaults.standard.set(url.bookmarkData(), forKey: "selectedModelBookmark")
+        print("📂 선택된 모델 로드 시도: \(url.path)")
         
-        print("✅ 모델 경로 저장: \(url.path)")
-        
-        // 모델 로드
+        // 모델 로드 (성공 시 LlamaManager에서 경로 자동 저장)
         Task {
-            await llamaManager.loadModelFromPath(url.path)
-            // 모델 로드 완료 후 모달 닫기
-            dismiss()
+            let success = await llamaManager.loadModelFromPath(url.path)
+            
+            if success {
+                // 북마크 데이터 저장 (iOS 샌드박스 보안을 위해)
+                if let bookmark = url.bookmarkData() {
+                    UserDefaults.standard.set(bookmark, forKey: "selectedModelBookmark")
+                    print("✅ 모델 북마크 저장 완료")
+                }
+                // 모델 로드 완료 후 모달 닫기
+                dismiss()
+            } else {
+                print("❌ 모델 로드 실패 - 경로 저장하지 않음")
+            }
         }
     }
 }

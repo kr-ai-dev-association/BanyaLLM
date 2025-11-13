@@ -27,15 +27,29 @@ class LlamaManager: ObservableObject {
     
     func loadModel() async {
         do {
-            // 저장된 모델 경로 확인
-            if let savedPath = UserDefaults.standard.string(forKey: "selectedModelPath"),
-               FileManager.default.fileExists(atPath: savedPath) {
-                print("💾 저장된 모델 경로 사용: \(savedPath)")
-                await loadModelFromPath(savedPath)
-                return
+            // 1. 저장된 모델 경로 확인
+            if let savedPath = UserDefaults.standard.string(forKey: "selectedModelPath") {
+                print("💾 저장된 모델 경로 발견: \(savedPath)")
+                
+                if FileManager.default.fileExists(atPath: savedPath) {
+                    print("✅ 저장된 경로에 파일 존재 - 자동 로드 시도")
+                    let success = await loadModelFromPath(savedPath)
+                    
+                    if success {
+                        print("✅ 저장된 모델 자동 로드 성공")
+                        return
+                    } else {
+                        print("⚠️ 저장된 모델 로드 실패 - 경로 제거")
+                        UserDefaults.standard.removeObject(forKey: "selectedModelPath")
+                    }
+                } else {
+                    print("⚠️ 저장된 경로에 파일 없음 - 경로 제거")
+                    UserDefaults.standard.removeObject(forKey: "selectedModelPath")
+                }
             }
             
-            // 기본 경로에서 모델 찾기
+            // 2. 기본 경로에서 모델 찾기
+            print("🔍 기본 경로에서 모델 검색")
             let modelPath = try getModelPath()
             await loadModelFromPath(modelPath)
             
@@ -46,7 +60,8 @@ class LlamaManager: ObservableObject {
         }
     }
     
-    func loadModelFromPath(_ path: String) async {
+    @discardableResult
+    func loadModelFromPath(_ path: String) async -> Bool {
         do {
             loadingProgress = "모델 로딩 중..."
             print("📂 모델 로드 시작: \(path)")
@@ -61,11 +76,16 @@ class LlamaManager: ObservableObject {
             
             // 성공 시 경로 저장
             UserDefaults.standard.set(path, forKey: "selectedModelPath")
+            print("💾 모델 경로 저장: \(path)")
+            
+            return true
             
         } catch {
             isModelLoaded = false
             loadingProgress = "모델 로드 실패: \(error.localizedDescription)"
             print("❌ 모델 로드 실패: \(error)")
+            
+            return false
         }
     }
     
