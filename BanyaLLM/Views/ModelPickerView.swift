@@ -121,10 +121,11 @@ struct ModelPickerView: View {
             case .success(let urls):
                 if let url = urls.first {
                     selectedFileURL = url
-                    print("✅ 파일 선택됨: \(url.path)")
+                    // print("✅ 파일 선택됨: \(url.path)")
                 }
             case .failure(let error):
-                print("❌ 파일 선택 실패: \(error)")
+                // print("❌ 파일 선택 실패: \(error)")
+                break
             }
         }
         }
@@ -149,11 +150,11 @@ struct ModelPickerView: View {
         
         // 보안 범위 리소스 접근 시작
         guard url.startAccessingSecurityScopedResource() else {
-            print("❌ 파일 접근 권한 없음")
+            // print("❌ 파일 접근 권한 없음")
             return
         }
         
-        print("📂 선택된 모델 로드 시도: \(url.path)")
+        // print("📂 선택된 모델 로드 시도: \(url.path)")
         
         // 모델 로드 (성공 시 LlamaManager에서 경로 자동 저장)
         Task {
@@ -163,12 +164,12 @@ struct ModelPickerView: View {
                 // 북마크 데이터 저장 (iOS 샌드박스 보안을 위해)
                 if let bookmark = url.bookmarkData() {
                     UserDefaults.standard.set(bookmark, forKey: "selectedModelBookmark")
-                    print("✅ 모델 북마크 저장 완료")
+                    // print("✅ 모델 북마크 저장 완료")
                 }
                 // 모델 로드 완료 후 모달 닫기
                 dismiss()
             } else {
-                print("❌ 모델 로드 실패 - 경로 저장하지 않음")
+                // print("❌ 모델 로드 실패 - 경로 저장하지 않음")
             }
         }
     }

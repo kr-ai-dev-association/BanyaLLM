@@ -30,7 +30,7 @@ func llama_batch_add(_ batch: inout llama_batch, _ id: llama_token, _ pos: llama
             seqIdArray[i] = seq_ids[i]
         }
     } else {
-        print("⚠️ seq_id 배열이 nil입니다. 토큰 인덱스: \(tokenIndex)")
+        // print("⚠️ seq_id 배열이 nil입니다. 토큰 인덱스: \(tokenIndex)")
     }
     
     batch.logits[tokenIndex] = logits ? 1 : 0
@@ -47,7 +47,7 @@ actor LlamaContext {
     private var temporary_invalid_cchars: [CChar] = []
     
     var isDone: Bool = false
-    var n_len: Int32 = 64   // 최대 생성 토큰 수 (매우 간결한 응답, 2-3문장)
+    var n_len: Int32 = 256   // 최대 생성 토큰 수 (적절한 길이의 응답, 5-8문장)
     var n_cur: Int32 = 0
     
     // 강제 종료 메서드
@@ -60,18 +60,18 @@ actor LlamaContext {
     
     init(modelPath: String) {
         self.modelPath = modelPath
-        // batch 크기를 2048로 늘려서 긴 프롬프트 처리 가능하도록 함
-        self.batch = llama_batch_init(2048, 0, 1)
+        // batch 크기를 16384로 늘려서 매우 긴 프롬프트 처리 가능하도록 함
+        self.batch = llama_batch_init(16384, 0, 1)
     }
     
     func initialize() throws {
         guard FileManager.default.fileExists(atPath: modelPath) else {
-            print("❌ 모델 파일을 찾을 수 없습니다: \(modelPath)")
+            // print("❌ 모델 파일을 찾을 수 없습니다: \(modelPath)")
             throw LlamaError.modelNotFound
         }
         
-        print("✅ 모델 파일 확인: \(modelPath)")
-        print("🔄 llama.cpp로 모델 로딩 중...")
+        // print("✅ 모델 파일 확인: \(modelPath)")
+        // print("🔄 llama.cpp로 모델 로딩 중...")
         
         // llama.cpp 초기화
         llama_backend_init()
@@ -80,32 +80,32 @@ actor LlamaContext {
         
         #if targetEnvironment(simulator)
         model_params.n_gpu_layers = 0
-        print("📱 시뮬레이터: CPU 모드")
+        // print("📱 시뮬레이터: CPU 모드")
         #else
         // GPU 메모리 부족 방지: 일부 레이어만 GPU에 로드
         model_params.n_gpu_layers = 24  // 33개 중 24개만 GPU (약 70%)
-        print("⚡ 실제 기기: 하이브리드 모드 (GPU: 24레이어, CPU: 9레이어)")
+        // print("⚡ 실제 기기: 하이브리드 모드 (GPU: 24레이어, CPU: 9레이어)")
         #endif
         
         guard let loadedModel = llama_model_load_from_file(modelPath, model_params) else {
-            print("❌ 모델 로드 실패")
+            // print("❌ 모델 로드 실패")
             throw LlamaError.couldNotInitializeContext
         }
         self.model = loadedModel
         
         let n_threads = max(1, min(8, ProcessInfo.processInfo.processorCount - 2))
-        print("🧵 스레드 수: \(n_threads)")
+        // print("🧵 스레드 수: \(n_threads)")
         
         var ctx_params = llama_context_default_params()
         ctx_params.n_ctx = 1024  // 2048 → 1024로 줄여서 메모리 절약
-        ctx_params.n_batch = 4096  // batch 크기: 매우 긴 프롬프트 처리 가능 (웹 검색 결과 포함)
+        ctx_params.n_batch = 16384  // batch 크기: 매우 긴 프롬프트 처리 가능 (웹 검색 결과 포함)
         ctx_params.n_threads = Int32(n_threads)
         ctx_params.n_threads_batch = Int32(n_threads)
         
-        print("🎛️ 컨텍스트 크기: 1024, Batch 크기: 4096 (긴 프롬프트 처리)")
+        // print("🎛️ 컨텍스트 크기: 1024, Batch 크기: 16384 (매우 긴 프롬프트 처리)")
         
         guard let loadedContext = llama_init_from_model(loadedModel, ctx_params) else {
-            print("❌ 컨텍스트 초기화 실패")
+            // print("❌ 컨텍스트 초기화 실패")
             throw LlamaError.couldNotInitializeContext
         }
         self.context = loadedContext
@@ -137,40 +137,40 @@ actor LlamaContext {
         // 6. Dist 샘플링 (최종 토큰 선택)
         llama_sampler_chain_add(self.sampling, llama_sampler_init_dist(UInt32.random(in: 0...1000)))
         
-        print("🎛️ 샘플링 설정: Temp=0.6, Top-P=0.9, Min-P=0.05, Repeat=1.15 (last_n=64), Freq=0.1, Presence=0.1")
+        // print("🎛️ 샘플링 설정: Temp=0.6, Top-P=0.9, Min-P=0.05, Repeat=1.15 (last_n=64), Freq=0.1, Presence=0.1")
         
         self.vocab = llama_model_get_vocab(loadedModel)
         
-        print("✅ llama.cpp 모델 로드 완료!")
+        // print("✅ llama.cpp 모델 로드 완료!")
     }
     
     func completionInit(text: String) {
-        print("🚀 추론 시작")
+        // print("🚀 추론 시작")
         
         guard let context = context else { 
-            print("❌ context가 nil입니다!")
+            // print("❌ context가 nil입니다!")
             return 
         }
         
         tokens_list = tokenize(text: text, add_bos: true)
         temporary_invalid_cchars = []
         
-        print("🔢 토큰화: \(tokens_list.count)개")
+        // print("🔢 토큰화: \(tokens_list.count)개")
         
         let n_ctx = llama_n_ctx(context)
         let n_kv_req = tokens_list.count + (Int(n_len) - tokens_list.count)
         
         
         if n_kv_req > n_ctx {
-            print("⚠️ 경고: n_kv_req > n_ctx")
+            // print("⚠️ 경고: n_kv_req > n_ctx")
         }
         
         llama_batch_clear(&batch)
         
-        // batch 크기 제한 확인 (2048)
-        let maxBatchSize = 2048
+        // batch 크기 제한 확인 (16384)
+        let maxBatchSize = 16384
         if tokens_list.count > maxBatchSize {
-            print("⚠️ 경고: 토큰 수(\(tokens_list.count))가 batch 크기(\(maxBatchSize))를 초과합니다. 처음 \(maxBatchSize)개만 사용합니다.")
+            // print("⚠️ 경고: 토큰 수(\(tokens_list.count))가 batch 크기(\(maxBatchSize))를 초과합니다. 처음 \(maxBatchSize)개만 사용합니다.")
         }
         
         // batch에 토큰 추가 (최대 batch 크기까지만)
@@ -181,7 +181,7 @@ actor LlamaContext {
             if seqIdArray != nil {
                 llama_batch_add(&batch, tokens_list[i], Int32(i), [0], false)
             } else {
-                print("⚠️ seq_id 배열이 nil입니다. 토큰 인덱스: \(i) - batch 크기 초과 가능성")
+                // print("⚠️ seq_id 배열이 nil입니다. 토큰 인덱스: \(i) - batch 크기 초과 가능성")
                 break
             }
         }
@@ -190,13 +190,17 @@ actor LlamaContext {
             batch.logits[Int(batch.n_tokens) - 1] = 1
             
             if llama_decode(context, batch) != 0 {
-                print("❌ llama_decode() 실패")
+                // print("❌ llama_decode() 실패")
             }
+            
+            // n_cur을 실제로 batch에 추가되고 decode된 토큰 수로 설정 (KV cache 위치와 일치)
+            // batch.n_tokens는 실제로 처리된 토큰 수
+            n_cur = Int32(batch.n_tokens)
         } else {
-            print("❌ batch에 토큰이 없습니다!")
+            // print("❌ batch에 토큰이 없습니다!")
+            n_cur = 0
         }
         
-        n_cur = batch.n_tokens
         isDone = false
     }
     
@@ -208,14 +212,17 @@ actor LlamaContext {
             return ""
         }
         
-        let new_token_id = llama_sampler_sample(sampling, context, batch.n_tokens - 1)
+        // llama_sampler_sample의 세 번째 파라미터는 KV cache의 마지막 토큰 position
+        // n_cur은 다음에 추가할 토큰의 position이므로, 현재 마지막 토큰은 n_cur - 1
+        let lastTokenPos = max(0, n_cur - 1)
+        let new_token_id = llama_sampler_sample(sampling, context, lastTokenPos)
         
         // EOG 토큰 감지 (Llama 3.1 EOG 토큰 ID 직접 비교)
         // 128001: <|end_of_text|>, 128008: <|eom_id|>, 128009: <|eot_id|>
         let isEOG = (new_token_id == 128001 || new_token_id == 128008 || new_token_id == 128009)
         
         if isEOG || n_cur == n_len {
-            print("✅ 생성 완료 (EOG: \(isEOG), 토큰: \(n_cur)개)")
+            // print("✅ 생성 완료 (EOG: \(isEOG), 토큰: \(n_cur)개)")
             isDone = true
             temporary_invalid_cchars.removeAll()
             return "" // EOG 토큰은 출력하지 않음
@@ -232,7 +239,7 @@ actor LlamaContext {
             n_cur += 1
             
             if llama_decode(context, batch) != 0 {
-                print("❌ llama_decode 실패!")
+                // print("❌ llama_decode 실패!")
             }
             
             return "" // 빈 문자열 반환 (특수 토큰은 출력 안 함)
@@ -321,13 +328,13 @@ actor LlamaContext {
         n_cur += 1
         
         if llama_decode(context, batch) != 0 {
-            print("❌ llama_decode 실패!")
+            // print("❌ llama_decode 실패!")
         }
         
         // 생성된 토큰 로그 출력 (디버깅용)
-        if !new_token_str.isEmpty {
-            print("🔤 토큰 출력: '\(new_token_str)' (ID: \(new_token_id))")
-        }
+        // if !new_token_str.isEmpty {
+        //     print("🔤 토큰 출력: '\(new_token_str)' (ID: \(new_token_id))")
+        // }
         
         return new_token_str
     }

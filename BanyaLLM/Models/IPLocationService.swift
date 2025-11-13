@@ -16,7 +16,7 @@ class IPLocationService {
     /// - Returns: 위치 정보 (도시, 국가, 위도, 경도), 실패 시 서울 강남구 기본값 반환
     func getLocationFromIP() async -> IPLocation {
         guard let url = URL(string: baseURL) else {
-            print("⚠️ IP 위치 URL 생성 실패: 기본값(서울 강남구) 반환")
+            // print("⚠️ IP 위치 URL 생성 실패: 기본값(서울 강남구) 반환")
             return getDefaultLocation()
         }
         
@@ -29,12 +29,12 @@ class IPLocationService {
             let (data, response) = try await URLSession.shared.data(for: request)
             
             guard let httpResponse = response as? HTTPURLResponse else {
-                print("⚠️ IP 위치 응답 형식 오류: 기본값(서울 강남구) 반환")
+                // print("⚠️ IP 위치 응답 형식 오류: 기본값(서울 강남구) 반환")
                 return getDefaultLocation()
             }
             
             guard (200...299).contains(httpResponse.statusCode) else {
-                print("⚠️ IP 위치 HTTP 오류 (\(httpResponse.statusCode)): 기본값(서울 강남구) 반환")
+                // print("⚠️ IP 위치 HTTP 오류 (\(httpResponse.statusCode)): 기본값(서울 강남구) 반환")
                 return getDefaultLocation()
             }
             
@@ -43,7 +43,7 @@ class IPLocationService {
                 let locationResponse = try decoder.decode(IPLocationResponse.self, from: data)
                 
                 guard locationResponse.status == "success" else {
-                    print("⚠️ IP 위치 API 오류: 기본값(서울 강남구) 반환")
+                    // print("⚠️ IP 위치 API 오류: 기본값(서울 강남구) 반환")
                     return getDefaultLocation()
                 }
                 
@@ -57,11 +57,11 @@ class IPLocationService {
                     timezone: locationResponse.timezone ?? "Asia/Seoul"
                 )
             } catch {
-                print("❌ IP 위치 응답 디코딩 실패: \(error) - 기본값(서울 강남구) 반환")
+                // print("❌ IP 위치 응답 디코딩 실패: \(error) - 기본값(서울 강남구) 반환")
                 return getDefaultLocation()
             }
         } catch {
-            print("⚠️ IP 위치 정보 가져오기 실패: \(error.localizedDescription) - 기본값(서울 강남구) 반환")
+            // print("⚠️ IP 위치 정보 가져오기 실패: \(error.localizedDescription) - 기본값(서울 강남구) 반환")
             return getDefaultLocation()
         }
     }

@@ -39,7 +39,7 @@ class ConversationHistoryManager {
         // UserDefaults에 저장
         if let encoded = try? JSONEncoder().encode(history) {
             UserDefaults.standard.set(encoded, forKey: storageKey)
-            print("💾 대화 히스토리 저장 완료: \(history.count)턴")
+            // print("💾 대화 히스토리 저장 완료: \(history.count)턴")
         }
     }
     
@@ -55,7 +55,7 @@ class ConversationHistoryManager {
     /// 대화 히스토리 초기화
     func clearHistory() {
         UserDefaults.standard.removeObject(forKey: storageKey)
-        print("🗑️ 대화 히스토리 초기화 완료")
+        // print("🗑️ 대화 히스토리 초기화 완료")
     }
     
     /// 최근 N턴의 사용자 질문만 반환

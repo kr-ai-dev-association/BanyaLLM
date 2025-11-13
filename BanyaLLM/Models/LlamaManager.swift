@@ -42,18 +42,31 @@ class LlamaManager: NSObject, ObservableObject {
     private let systemPrompt = """
 사용자의 질문에 직접적으로 답변하세요. 자신의 역할이나 능력을 설명하지 말고, 바로 도움을 제공하세요.
 
+중요: 현재 질문에만 답변하세요
+- 항상 [사용자 질문] 섹션의 현재 질문에만 답변하세요
+- 이전 대화 맥락은 참고용이며, 이전 질문에 답변하지 마세요
+- 이전 대화는 맥락 이해를 위한 참고 자료일 뿐입니다
+- 현재 질문과 관련 없는 이전 대화 내용은 무시하세요
+
 답변 규칙:
-- 간결하고 명확하게 답변
+- 명확하고 상세하게 답변 (5-8문장 정도의 적절한 길이)
+- 질문에 필요한 정보를 충분히 제공
 - 한 번에 한 가지씩 안내
 - 위급한 상황이면 보호자나 119 연락 안내
 - 복잡한 요청은 필요한 정보를 먼저 확인
 - 물결표, 이모티콘, 과도한 문장부호 사용 금지
 - 문장부호는 최대 1개만 사용
 
+인사 응답 규칙:
+- 사용자가 인사(안녕, 안녕하세요, 하이, 헬로 등)를 하면 인사에 대해 설명하지 말고 간단히 인사로 응답하세요
+- 인사는 1-2문장으로 간단히 답변하세요 (예: "안녕하세요", "안녕하세요! 무엇을 도와드릴까요?")
+- 인사의 의미나 정의를 설명하지 마세요
+
 절대 금지:
 - "장애인" 관련 표현 사용 금지
 - 사용자의 특정 상황이나 조건 명시적 언급 금지
 - 현재 날짜, 시간, 위치 정보를 명시적으로 언급하지 않음 (내부적으로만 활용)
+- 이전 질문에 대한 답변 금지 (오직 현재 질문에만 답변)
 
 웹 검색 결과 활용:
 - 검색 결과가 있으면 그 내용을 자연스럽게 재구성하여 답변
@@ -64,7 +77,7 @@ class LlamaManager: NSObject, ObservableObject {
     // Tavily API 키 설정 (환경 변수나 설정에서 가져올 수 있음)
     func setTavilyAPIKey(_ apiKey: String) {
         self.tavilyService = TavilyService(apiKey: apiKey)
-        print("✅ Tavily API 키 설정 완료")
+        // print("✅ Tavily API 키 설정 완료")
     }
     
     nonisolated override init() {
@@ -97,7 +110,7 @@ class LlamaManager: NSObject, ObservableObject {
         networkMonitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor in
                 self?.isNetworkAvailable = path.status == .satisfied
-                print("🌐 네트워크 상태: \(path.status == .satisfied ? "연결됨" : "연결 안 됨")")
+                // print("🌐 네트워크 상태: \(path.status == .satisfied ? "연결됨" : "연결 안 됨")")
             }
         }
         networkMonitor.start(queue: queue)
@@ -113,9 +126,9 @@ class LlamaManager: NSObject, ObservableObject {
     
     /// IP 기반 위치 정보 가져오기 (위치 권한이 없을 때 사용)
     private func fetchIPLocation() async {
-        print("🌐 IP 기반 위치 정보 가져오기 시도...")
+        // print("🌐 IP 기반 위치 정보 가져오기 시도...")
         ipLocation = await ipLocationService.getLocationFromIP()
-        print("✅ IP 기반 위치 정보 획득: \(ipLocation.displayName)")
+        // print("✅ IP 기반 위치 정보 획득: \(ipLocation.displayName)")
     }
     
     /// 위치 권한 요청 및 현재 위치 가져오기
@@ -139,12 +152,12 @@ class LlamaManager: NSObject, ObservableObject {
             locationManager.stopUpdatingLocation()
             
             if currentLocation != nil {
-                print("✅ 현재 위치 정보 획득 완료")
+                // print("✅ 현재 위치 정보 획득 완료")
             } else {
-                print("⚠️ 위치 정보를 가져올 수 없습니다")
+                // print("⚠️ 위치 정보를 가져올 수 없습니다")
             }
         } else {
-            print("⚠️ 위치 권한이 없습니다. 날짜/시간 정보만 제공됩니다.")
+            // print("⚠️ 위치 권한이 없습니다. 날짜/시간 정보만 제공됩니다.")
         }
     }
     
@@ -193,24 +206,28 @@ class LlamaManager: NSObject, ObservableObject {
         // 이전 대화 턴 정보 추가 (질문+응답)
         var previousTurnsContext = ""
         if !previousTurns.isEmpty {
-            previousTurnsContext = "\n\n[이전 대화 맥락]\n"
+            previousTurnsContext = "\n\n[이전 대화 맥락 - 참고용]\n"
+            previousTurnsContext += "⚠️ 중요: 아래 대화는 참고용입니다. 이전 질문에 답변하지 마세요. 오직 현재 질문에만 답변하세요.\n\n"
             for (index, turn) in previousTurns.enumerated() {
                 previousTurnsContext += "\(index + 1). 사용자: \(turn.userQuestion)\n"
                 previousTurnsContext += "   응답: \(turn.aiResponse)\n"
             }
-            previousTurnsContext += "\n위 대화를 참고하여 현재 질문에 자연스럽게 답변하세요."
+            previousTurnsContext += "\n⚠️ 위 대화는 맥락 이해를 위한 참고 자료일 뿐입니다. 반드시 아래 [사용자 질문]의 현재 질문에만 답변하세요."
         }
         
         // 검색 결과가 있으면 프롬프트에 포함
-        var enhancedMessage = "[현재 상황 정보]\n\(contextInfo)\(previousTurnsContext)\n\n[사용자 질문]\n\(userMessage)"
+        var enhancedMessage = "[현재 상황 정보]\n\(contextInfo)\(previousTurnsContext)\n\n[사용자 질문] ⚠️ 반드시 이 질문에만 답변하세요\n\(userMessage)"
         
         if let results = searchResults, !results.isEmpty {
             var searchContext = "\n\n[참고 정보]\n"
-            // 검색 결과를 최대 3개로 제한하고, 각 결과의 내용을 100자로 제한하여 토큰 수 절약
-            let limitedResults = Array(results.prefix(3))
+            // 검색 결과를 최대 2개로 제한하고, 각 결과의 내용을 50자로 제한하여 토큰 수 절약
+            let limitedResults = Array(results.prefix(2))
             for (index, result) in limitedResults.enumerated() {
-                searchContext += "\(index + 1). \(result.title)\n"
-                searchContext += "   \(result.content.prefix(100))\n"
+                // 제목도 30자로 제한
+                let title = String(result.title.prefix(30))
+                let content = String(result.content.prefix(50))
+                searchContext += "\(index + 1). \(title)\n"
+                searchContext += "   \(content)\n"
             }
             searchContext += "\n위 정보를 바탕으로 사용자의 질문에 직접적으로 답변하세요. 정보를 나열하지 말고 자연스럽게 정리하여 답변하세요."
             enhancedMessage += searchContext
@@ -236,34 +253,34 @@ class LlamaManager: NSObject, ObservableObject {
         do {
             // 1. 저장된 모델 경로 확인
             if let savedPath = UserDefaults.standard.string(forKey: "selectedModelPath") {
-                print("💾 저장된 모델 경로 발견: \(savedPath)")
+                // print("💾 저장된 모델 경로 발견: \(savedPath)")
                 
                 if FileManager.default.fileExists(atPath: savedPath) {
-                    print("✅ 저장된 경로에 파일 존재 - 자동 로드 시도")
+                    // print("✅ 저장된 경로에 파일 존재 - 자동 로드 시도")
                     let success = await loadModelFromPath(savedPath)
                     
                     if success {
-                        print("✅ 저장된 모델 자동 로드 성공")
+                        // print("✅ 저장된 모델 자동 로드 성공")
                         return
                     } else {
-                        print("⚠️ 저장된 모델 로드 실패 - 경로 제거")
+                        // print("⚠️ 저장된 모델 로드 실패 - 경로 제거")
                         UserDefaults.standard.removeObject(forKey: "selectedModelPath")
                     }
                 } else {
-                    print("⚠️ 저장된 경로에 파일 없음 - 경로 제거")
+                    // print("⚠️ 저장된 경로에 파일 없음 - 경로 제거")
                     UserDefaults.standard.removeObject(forKey: "selectedModelPath")
                 }
             }
             
             // 2. 기본 경로에서 모델 찾기
-            print("🔍 기본 경로에서 모델 검색")
+            // print("🔍 기본 경로에서 모델 검색")
             let modelPath = try getModelPath()
             await loadModelFromPath(modelPath)
             
         } catch {
             isModelLoaded = false
             loadingProgress = "모델 파일을 선택해주세요"
-            print("ℹ️ 모델 파일 선택 필요")
+            // print("ℹ️ 모델 파일 선택 필요")
         }
     }
     
@@ -271,7 +288,7 @@ class LlamaManager: NSObject, ObservableObject {
     func loadModelFromPath(_ path: String) async -> Bool {
         do {
             loadingProgress = "모델 로딩 중..."
-            print("📂 모델 로드 시작: \(path)")
+            // print("📂 모델 로드 시작: \(path)")
             
             // LlamaContext 생성 및 초기화
             llamaContext = LlamaContext(modelPath: path)
@@ -279,18 +296,18 @@ class LlamaManager: NSObject, ObservableObject {
             
             isModelLoaded = true
             loadingProgress = "모델 로드 완료"
-            print("✅ 모델이 성공적으로 로드되었습니다")
+            // print("✅ 모델이 성공적으로 로드되었습니다")
             
             // 성공 시 경로 저장
             UserDefaults.standard.set(path, forKey: "selectedModelPath")
-            print("💾 모델 경로 저장: \(path)")
+            // print("💾 모델 경로 저장: \(path)")
             
             return true
             
         } catch {
             isModelLoaded = false
             loadingProgress = "모델 로드 실패: \(error.localizedDescription)"
-            print("❌ 모델 로드 실패: \(error)")
+            // print("❌ 모델 로드 실패: \(error)")
             
             return false
         }
@@ -300,7 +317,7 @@ class LlamaManager: NSObject, ObservableObject {
         // 프로젝트 루트에서 모델 파일 찾기 (개발 중)
         let projectPath = "/Volumes/Transcend/Projects/BanyaLLM/BanyaLLM/\(modelFilename)"
         if FileManager.default.fileExists(atPath: projectPath) {
-            print("📁 모델 경로: \(projectPath)")
+            // print("📁 모델 경로: \(projectPath)")
             return projectPath
         }
         
@@ -309,20 +326,20 @@ class LlamaManager: NSObject, ObservableObject {
         let modelPath = documentsPath.appendingPathComponent(modelFilename).path
         
         if FileManager.default.fileExists(atPath: modelPath) {
-            print("📁 모델 경로: \(modelPath)")
+            // print("📁 모델 경로: \(modelPath)")
             return modelPath
         }
         
         // Bundle에서 모델 파일 찾기 (배포 시)
         if let path = Bundle.main.path(forResource: "llama31-banyaa-q4_k_m", ofType: "gguf") {
-            print("📁 모델 경로: \(path)")
+            // print("📁 모델 경로: \(path)")
             return path
         }
         
-        print("❌ 모델 파일을 찾을 수 없습니다")
-        print("다음 경로를 확인해주세요:")
-        print("1. \(projectPath)")
-        print("2. \(modelPath)")
+        // print("❌ 모델 파일을 찾을 수 없습니다")
+        // print("다음 경로를 확인해주세요:")
+        // print("1. \(projectPath)")
+        // print("2. \(modelPath)")
         
         throw LlamaError.modelNotFound
     }
@@ -330,6 +347,25 @@ class LlamaManager: NSObject, ObservableObject {
     func generate(prompt: String) async -> AsyncStream<String> {
         return AsyncStream { continuation in
             Task {
+                // 인사 키워드 감지 및 즉시 응답
+                let greetingKeywords = ["안녕", "안녕하세요", "하이", "헬로", "hello", "hi", "hey", "반가워", "반갑습니다"]
+                let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                
+                // 인사 키워드가 포함되어 있고, 질문이 아닌 경우 (인사만 있는 경우)
+                let isGreeting = greetingKeywords.contains { keyword in
+                    trimmedPrompt.contains(keyword.lowercased())
+                } && !trimmedPrompt.contains("?") && !trimmedPrompt.contains("뭐") && !trimmedPrompt.contains("무엇")
+                
+                if isGreeting {
+                    // 인사 응답 즉시 반환
+                    let greetingResponse = "안녕하세요! 무엇을 도와드릴까요?"
+                    continuation.yield(greetingResponse)
+                    // 대화 히스토리에 저장
+                    self.conversationHistory.saveTurn(userQuestion: prompt, aiResponse: greetingResponse)
+                    continuation.finish()
+                    return
+                }
+                
                 #if targetEnvironment(simulator)
                 // 시뮬레이터: 간단한 응답 생성
                 let responses = [
@@ -350,7 +386,7 @@ class LlamaManager: NSObject, ObservableObject {
                 #else
                 
                     guard let llamaContext = self.llamaContext else {
-                        print("❌ LlamaContext가 초기화되지 않았습니다")
+                        // print("❌ LlamaContext가 초기화되지 않았습니다")
                         continuation.yield("모델이 로드되지 않았습니다. 앱을 재시작해주세요.")
                         continuation.finish()
                         return
@@ -363,26 +399,25 @@ class LlamaManager: NSObject, ObservableObject {
                     if isConnected {
                         // 인터넷 연결되어 있으면 무조건 웹 검색
                         if let tavilyService = self.tavilyService {
-                            print("🔍 인터넷 연결됨: Tavily로 웹 검색 중...")
-                            continuation.yield("생각 중... ")
+                            // print("🔍 인터넷 연결됨: Tavily로 웹 검색 중...")
                             
                             do {
                                 searchResults = try await tavilyService.search(query: prompt)
                                 if let results = searchResults, !results.isEmpty {
-                                    print("✅ 검색 결과 \(results.count)개 발견")
+                                    // print("✅ 검색 결과 \(results.count)개 발견")
                                 } else {
-                                    print("⚠️ 검색 결과 없음")
+                                    // print("⚠️ 검색 결과 없음")
                                 }
                             } catch {
-                                print("❌ Tavily 검색 실패: \(error)")
+                                // print("❌ Tavily 검색 실패: \(error)")
                                 // 검색 실패해도 LLM 응답은 계속 진행
                             }
                         } else {
-                            print("⚠️ Tavily API 키가 설정되지 않았습니다. LLM 자체 지식으로 답변합니다.")
+                            // print("⚠️ Tavily API 키가 설정되지 않았습니다. LLM 자체 지식으로 답변합니다.")
                         }
                     } else {
                         // 인터넷 연결 안 됨: LLM 자체 지식으로 답변
-                        print("📴 인터넷 연결 안 됨: LLM 자체 지식으로 답변합니다.")
+                        // print("📴 인터넷 연결 안 됨: LLM 자체 지식으로 답변합니다.")
                     }
                     
                     // 대화 히스토리에서 이전 대화 턴 불러오기 (질문+응답)
@@ -393,6 +428,21 @@ class LlamaManager: NSObject, ObservableObject {
                     
                     // LLM 추론 초기화
                     await llamaContext.completionInit(text: formattedPrompt)
+                    
+                    // 첫 번째 토큰이 도착하기 전까지 "..." 애니메이션 표시
+                    class TokenReceivedFlag {
+                        var value = false
+                    }
+                    let isFirstTokenReceived = TokenReceivedFlag()
+                    let animationTask = Task {
+                        let dots = [".", "..", "..."]
+                        var index = 0
+                        while !isFirstTokenReceived.value && !Task.isCancelled {
+                            continuation.yield(dots[index])
+                            index = (index + 1) % dots.count
+                            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5초 간격
+                        }
+                    }
                     
                     // 스트리밍 응답 생성 (강화된 특수 토큰 필터링)
                     var accumulatedRaw = ""
@@ -507,6 +557,11 @@ class LlamaManager: NSObject, ObservableObject {
                     var stopReason = ""  // 종료 이유
                     var textLengthWhenStopRequested = 0  // 종료 요청 시점의 텍스트 길이
                     
+                    // 토큰 레벨 반복 감지
+                    var lastTokens: [String] = []  // 최근 토큰들 저장 (최대 20개)
+                    let maxTokenHistory = 20
+                    let tokenRepeatThreshold = 5  // 같은 토큰이 5번 연속 반복되면 종료
+                    
                     // 문장 유사도 계산 함수 (Jaccard 유사도 + Levenshtein 거리)
                     func calculateSimilarity(_ str1: String, _ str2: String) -> Double {
                         // 1. 완전 일치
@@ -539,6 +594,38 @@ class LlamaManager: NSObject, ObservableObject {
                         let token = await llamaContext.completionLoop()
                         
                         if !token.isEmpty {
+                            // 첫 번째 토큰 도착 - 애니메이션 중지
+                            if !isFirstTokenReceived.value {
+                                isFirstTokenReceived.value = true
+                                animationTask.cancel()
+                            }
+                            
+                            // 토큰 레벨 반복 감지 (문장 완성 전에 감지)
+                            let trimmedToken = token.trimmingCharacters(in: .whitespaces)
+                            if !trimmedToken.isEmpty {
+                                lastTokens.append(trimmedToken)
+                                if lastTokens.count > maxTokenHistory {
+                                    lastTokens.removeFirst()
+                                }
+                                
+                                // 같은 토큰이 연속으로 반복되는지 확인
+                                if lastTokens.count >= tokenRepeatThreshold {
+                                    let recentTokens = Array(lastTokens.suffix(tokenRepeatThreshold))
+                                    let firstToken = recentTokens[0]
+                                    let allSame = recentTokens.allSatisfy { $0 == firstToken }
+                                    
+                                    if allSame && firstToken.count > 0 {
+                                        // 같은 토큰이 연속 반복됨 - 즉시 종료
+                                        finalResponse = filterSpecialTokens(accumulatedRaw)
+                                        await llamaContext.forceStop()
+                                        await llamaContext.clear()
+                                        self.conversationHistory.saveTurn(userQuestion: prompt, aiResponse: finalResponse)
+                                        continuation.finish()
+                                        return
+                                    }
+                                }
+                            }
+                            
                             accumulatedRaw += token
                             
                             // 강화된 특수 토큰 필터링
@@ -587,10 +674,10 @@ class LlamaManager: NSObject, ObservableObject {
                                     }
                                     
                                     if isRepeated {
-                                        let similarityPercent = Int((mostSimilar!.similarity * 100))
-                                        print("🛑 반복 감지: 유사도 \(similarityPercent)% - 즉시 종료")
-                                        print("   현재: '\(newSentence.prefix(40))...'")
-                                        print("   이전: '\(mostSimilar!.sentence.prefix(40))...'")
+                                        // let similarityPercent = Int((mostSimilar!.similarity * 100))
+                                        // print("🛑 반복 감지: 유사도 \(similarityPercent)% - 즉시 종료")
+                                        // print("   현재: '\(newSentence.prefix(40))...'")
+                                        // print("   이전: '\(mostSimilar!.sentence.prefix(40))...'")
                                         
                                         // 반복 감지 시 즉시 종료 (문장 완성 대기 없음)
                                         finalResponse = cleanedText
@@ -611,11 +698,11 @@ class LlamaManager: NSObject, ObservableObject {
                                 previousSentenceCount = sentences.count
                             }
                             
-                            // 문장 종료 후 추가 생성 방지 (2-3문장 후 종료)
-                            if !shouldStopAfterSentence && sentences.count >= 3 {
+                            // 문장 종료 후 추가 생성 방지 (5-6문장 후 종료)
+                            if !shouldStopAfterSentence && sentences.count >= 6 {
                                 let lastChar = cleanedText.last
                                 if lastChar == "." || lastChar == "!" || lastChar == "?" {
-                                    print("✅ 충분한 응답 생성: 조기 종료")
+                                    // print("✅ 충분한 응답 생성: 조기 종료")
                                     // 종료 문자 확인 직후 즉시 종료 (문장이 잘리지 않도록)
                                     finalResponse = cleanedText
                                     await llamaContext.forceStop()
@@ -630,7 +717,7 @@ class LlamaManager: NSObject, ObservableObject {
                             if shouldStopAfterSentence {
                                 let lastChar = cleanedText.last
                                 if lastChar == "." || lastChar == "!" || lastChar == "?" {
-                                    print("✅ 문장 완성됨: \(stopReason)로 종료")
+                                    // print("✅ 문장 완성됨: \(stopReason)로 종료")
                                     finalResponse = cleanedText
                                     await llamaContext.forceStop()
                                     await llamaContext.clear()
@@ -645,12 +732,12 @@ class LlamaManager: NSObject, ObservableObject {
                                 if textGrowth > 30 {  // 대략 10-15토큰 정도 (한국어 기준)
                                     // 문장이 완성되지 않았지만 더 이상 기다리지 않고 종료
                                     // 마지막 문장의 마지막 단어를 확인하여 자연스러운 종료 지점 찾기
-                                    let lastWords = cleanedText.suffix(20).trimmingCharacters(in: .whitespaces)
-                                    if !lastWords.isEmpty {
-                                        print("⚠️ 문장 완성 대기 시간 초과: 자연스러운 종료 지점에서 종료 (텍스트 증가: \(textGrowth)자)")
-                                    } else {
-                                        print("⚠️ 문장 완성 대기 시간 초과: 강제 종료 (텍스트 증가: \(textGrowth)자)")
-                                    }
+                                    // let lastWords = cleanedText.suffix(20).trimmingCharacters(in: .whitespaces)
+                                    // if !lastWords.isEmpty {
+                                    //     print("⚠️ 문장 완성 대기 시간 초과: 자연스러운 종료 지점에서 종료 (텍스트 증가: \(textGrowth)자)")
+                                    // } else {
+                                    //     print("⚠️ 문장 완성 대기 시간 초과: 강제 종료 (텍스트 증가: \(textGrowth)자)")
+                                    // }
                                     finalResponse = cleanedText
                                     await llamaContext.forceStop()
                                     await llamaContext.clear()
@@ -679,6 +766,12 @@ class LlamaManager: NSObject, ObservableObject {
                     }
                     
                     // 추론 완료 후 정리 및 대화 히스토리 저장
+                    // 애니메이션 중지 (아직 실행 중이면)
+                    if !isFirstTokenReceived.value {
+                        isFirstTokenReceived.value = true
+                        animationTask.cancel()
+                    }
+                    
                     await llamaContext.clear()
                     
                     // 최종 응답이 있으면 대화 히스토리에 저장
@@ -704,7 +797,7 @@ extension LlamaManager: CLLocationManagerDelegate {
     }
     
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        print("❌ 위치 정보 가져오기 실패: \(error.localizedDescription)")
+        // print("❌ 위치 정보 가져오기 실패: \(error.localizedDescription)")
     }
     
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
