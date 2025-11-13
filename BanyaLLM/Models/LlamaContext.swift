@@ -98,11 +98,11 @@ actor LlamaContext {
         
         var ctx_params = llama_context_default_params()
         ctx_params.n_ctx = 1024  // 2048 → 1024로 줄여서 메모리 절약
-        ctx_params.n_batch = 2048  // batch 크기: 긴 프롬프트 처리 가능하도록 증가
+        ctx_params.n_batch = 4096  // batch 크기: 매우 긴 프롬프트 처리 가능 (웹 검색 결과 포함)
         ctx_params.n_threads = Int32(n_threads)
         ctx_params.n_threads_batch = Int32(n_threads)
         
-        print("🎛️ 컨텍스트 크기: 1024, Batch 크기: 2048 (메모리 최적화)")
+        print("🎛️ 컨텍스트 크기: 1024, Batch 크기: 4096 (긴 프롬프트 처리)")
         
         guard let loadedContext = llama_init_from_model(loadedModel, ctx_params) else {
             print("❌ 컨텍스트 초기화 실패")

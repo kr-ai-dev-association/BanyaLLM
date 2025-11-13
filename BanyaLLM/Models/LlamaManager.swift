@@ -181,9 +181,11 @@ class LlamaManager: NSObject, ObservableObject {
         
         if let results = searchResults, !results.isEmpty {
             var searchContext = "\n\n[웹 검색 결과]\n"
-            for (index, result) in results.enumerated() {
+            // 검색 결과를 최대 3개로 제한하고, 각 결과의 내용을 100자로 제한하여 토큰 수 절약
+            let limitedResults = Array(results.prefix(3))
+            for (index, result) in limitedResults.enumerated() {
                 searchContext += "\(index + 1). \(result.title)\n"
-                searchContext += "   \(result.content.prefix(200))\n"
+                searchContext += "   \(result.content.prefix(100))\n"
             }
             searchContext += "\n위 검색 결과를 참고하여 질문에 답변해주세요."
             enhancedMessage += searchContext
