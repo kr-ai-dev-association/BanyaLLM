@@ -183,9 +183,8 @@ actor LlamaContext {
         if isEOG || n_cur == n_len {
             print("✅ 생성 완료 (EOG: \(isEOG), 토큰: \(n_cur)개)")
             isDone = true
-            let new_token_str = String(cString: temporary_invalid_cchars + [0])
             temporary_invalid_cchars.removeAll()
-            return new_token_str
+            return "" // EOG 토큰은 출력하지 않음
         }
         
         // 특수 토큰 필터링 (Llama 3.1 특수 토큰은 출력하지 않음)
@@ -207,7 +206,7 @@ actor LlamaContext {
         
         let new_token_cchars = token_to_piece(token: new_token_id)
         temporary_invalid_cchars.append(contentsOf: new_token_cchars)
-        let new_token_str: String
+        var new_token_str: String
         if let string = String(validatingUTF8: temporary_invalid_cchars + [0]) {
             temporary_invalid_cchars.removeAll()
             new_token_str = string
@@ -221,6 +220,34 @@ actor LlamaContext {
             new_token_str = ""
         }
         
+        // Llama 3.1 특수 토큰 문자열 필터링
+        // 모델이 일반 토큰으로 특수 토큰 문자열을 생성할 수 있음
+        let specialTokenPatterns = [
+            "<|begin_of_text|>",
+            "<|end_of_text|>",
+            "<|start_header_id|>",
+            "<|end_header_id|>",
+            "<|eot_id|>",
+            "<|eom_id|>",
+            "<|python_tag|>",
+            "<|finetune_right_pad_id|>"
+        ]
+        
+        for pattern in specialTokenPatterns {
+            new_token_str = new_token_str.replacingOccurrences(of: pattern, with: "")
+        }
+        
+        // reserved_special_token 패턴 제거 (정규식 사용)
+        if let regex = try? NSRegularExpression(pattern: "<\\|reserved_special_token_\\d+\\|>", options: []) {
+            let range = NSRange(new_token_str.startIndex..., in: new_token_str)
+            new_token_str = regex.stringByReplacingMatches(
+                in: new_token_str,
+                options: [],
+                range: range,
+                withTemplate: ""
+            )
+        }
+        
         llama_batch_clear(&batch)
         llama_batch_add(&batch, new_token_id, n_cur, [0], true)
         
@@ -229,6 +256,11 @@ actor LlamaContext {
         
         if llama_decode(context, batch) != 0 {
             print("❌ llama_decode 실패!")
+        }
+        
+        // 생성된 토큰 로그 출력 (디버깅용)
+        if !new_token_str.isEmpty {
+            print("🔤 토큰 출력: '\(new_token_str)' (ID: \(new_token_id))")
         }
         
         return new_token_str
