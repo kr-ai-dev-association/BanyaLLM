@@ -105,7 +105,15 @@ actor LlamaContext {
     }
     
     func completionInit(text: String) {
-        guard let context = context else { return }
+        print("⏰ completionInit 호출됨")
+        print("📌 context 상태: \(context != nil ? "존재" : "nil")")
+        print("📌 vocab 상태: \(vocab != nil ? "존재" : "nil")")
+        print("📌 sampling 상태: \(sampling != nil ? "존재" : "nil")")
+        
+        guard let context = context else { 
+            print("❌ context가 nil입니다!")
+            return 
+        }
         
         print("🚀 추론 시작")
         print("📝 입력 텍스트: '\(text)'")
@@ -141,13 +149,17 @@ actor LlamaContext {
     }
     
     func completionLoop() -> String {
+        print("🔁 completionLoop 호출됨 (isDone: \(isDone))")
+        
         guard let context = context,
               let sampling = sampling,
               let vocab = vocab else {
+            print("❌ completionLoop: context/sampling/vocab 중 하나가 nil")
             isDone = true
             return ""
         }
         
+        print("🔁 샘플링 시작 (batch.n_tokens: \(batch.n_tokens))")
         let new_token_id = llama_sampler_sample(sampling, context, batch.n_tokens - 1)
         
         print("🔹 생성된 토큰 ID: \(new_token_id), 위치: \(n_cur)/\(n_len)")

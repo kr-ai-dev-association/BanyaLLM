@@ -135,7 +135,10 @@ class LlamaManager: ObservableObject {
                     print(String(repeating: "=", count: 50))
                     
                     // LLM 추론 초기화
+                    print("🔄 completionInit 호출 직전")
                     await llamaContext.completionInit(text: prompt)
+                    print("🔄 completionInit 호출 완료")
+                    print("🔄 isDone 상태: \(await llamaContext.isDone)")
                     
                     var totalTokens = 0
                     var totalOutput = ""
