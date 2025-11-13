@@ -60,7 +60,8 @@ actor LlamaContext {
     
     init(modelPath: String) {
         self.modelPath = modelPath
-        self.batch = llama_batch_init(512, 0, 1)
+        // batch 크기를 2048로 늘려서 긴 프롬프트 처리 가능하도록 함
+        self.batch = llama_batch_init(2048, 0, 1)
     }
     
     func initialize() throws {
@@ -165,13 +166,33 @@ actor LlamaContext {
         
         llama_batch_clear(&batch)
         
-        for i in 0..<tokens_list.count {
-            llama_batch_add(&batch, tokens_list[i], Int32(i), [0], false)
+        // batch 크기 제한 확인 (2048)
+        let maxBatchSize = 2048
+        if tokens_list.count > maxBatchSize {
+            print("⚠️ 경고: 토큰 수(\(tokens_list.count))가 batch 크기(\(maxBatchSize))를 초과합니다. 처음 \(maxBatchSize)개만 사용합니다.")
         }
-        batch.logits[Int(batch.n_tokens) - 1] = 1
         
-        if llama_decode(context, batch) != 0 {
-            print("❌ llama_decode() 실패")
+        // batch에 토큰 추가 (최대 batch 크기까지만)
+        let tokensToAdd = min(tokens_list.count, maxBatchSize)
+        for i in 0..<tokensToAdd {
+            // seq_id 배열 nil 체크
+            let seqIdArray = batch.seq_id[Int(batch.n_tokens)]
+            if seqIdArray != nil {
+                llama_batch_add(&batch, tokens_list[i], Int32(i), [0], false)
+            } else {
+                print("⚠️ seq_id 배열이 nil입니다. 토큰 인덱스: \(i) - batch 크기 초과 가능성")
+                break
+            }
+        }
+        
+        if batch.n_tokens > 0 {
+            batch.logits[Int(batch.n_tokens) - 1] = 1
+            
+            if llama_decode(context, batch) != 0 {
+                print("❌ llama_decode() 실패")
+            }
+        } else {
+            print("❌ batch에 토큰이 없습니다!")
         }
         
         n_cur = batch.n_tokens

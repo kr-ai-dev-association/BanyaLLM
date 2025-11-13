@@ -13,10 +13,11 @@ class IPLocationService {
     private let baseURL = "https://ip-api.com/json"
     
     /// IP 주소를 기반으로 위치 정보 가져오기
-    /// - Returns: 위치 정보 (도시, 국가, 위도, 경도)
-    func getLocationFromIP() async throws -> IPLocation? {
+    /// - Returns: 위치 정보 (도시, 국가, 위도, 경도), 실패 시 서울 강남구 기본값 반환
+    func getLocationFromIP() async -> IPLocation {
         guard let url = URL(string: baseURL) else {
-            throw IPLocationError.invalidURL
+            print("⚠️ IP 위치 URL 생성 실패: 기본값(서울 강남구) 반환")
+            return getDefaultLocation()
         }
         
         var request = URLRequest(url: url)
@@ -24,31 +25,57 @@ class IPLocationService {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.timeoutInterval = 5.0
         
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw IPLocationError.invalidResponse
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                print("⚠️ IP 위치 응답 형식 오류: 기본값(서울 강남구) 반환")
+                return getDefaultLocation()
+            }
+            
+            guard (200...299).contains(httpResponse.statusCode) else {
+                print("⚠️ IP 위치 HTTP 오류 (\(httpResponse.statusCode)): 기본값(서울 강남구) 반환")
+                return getDefaultLocation()
+            }
+            
+            let decoder = JSONDecoder()
+            do {
+                let locationResponse = try decoder.decode(IPLocationResponse.self, from: data)
+                
+                guard locationResponse.status == "success" else {
+                    print("⚠️ IP 위치 API 오류: 기본값(서울 강남구) 반환")
+                    return getDefaultLocation()
+                }
+                
+                return IPLocation(
+                    city: locationResponse.city ?? "강남구",
+                    country: locationResponse.country ?? "대한민국",
+                    countryCode: locationResponse.countryCode ?? "KR",
+                    latitude: locationResponse.lat ?? 37.5172,
+                    longitude: locationResponse.lon ?? 127.0473,
+                    region: locationResponse.regionName ?? "서울특별시",
+                    timezone: locationResponse.timezone ?? "Asia/Seoul"
+                )
+            } catch {
+                print("❌ IP 위치 응답 디코딩 실패: \(error) - 기본값(서울 강남구) 반환")
+                return getDefaultLocation()
+            }
+        } catch {
+            print("⚠️ IP 위치 정보 가져오기 실패: \(error.localizedDescription) - 기본값(서울 강남구) 반환")
+            return getDefaultLocation()
         }
-        
-        guard (200...299).contains(httpResponse.statusCode) else {
-            throw IPLocationError.httpError(statusCode: httpResponse.statusCode)
-        }
-        
-        let decoder = JSONDecoder()
-        let locationResponse = try decoder.decode(IPLocationResponse.self, from: data)
-        
-        guard locationResponse.status == "success" else {
-            throw IPLocationError.apiError(message: locationResponse.message ?? "Unknown error")
-        }
-        
+    }
+    
+    /// 기본 위치 정보 반환 (서울 강남구)
+    private func getDefaultLocation() -> IPLocation {
         return IPLocation(
-            city: locationResponse.city ?? "",
-            country: locationResponse.country ?? "",
-            countryCode: locationResponse.countryCode ?? "",
-            latitude: locationResponse.lat ?? 0.0,
-            longitude: locationResponse.lon ?? 0.0,
-            region: locationResponse.regionName ?? "",
-            timezone: locationResponse.timezone ?? ""
+            city: "강남구",
+            country: "대한민국",
+            countryCode: "KR",
+            latitude: 37.5172,
+            longitude: 127.0473,
+            region: "서울특별시",
+            timezone: "Asia/Seoul"
         )
     }
 }

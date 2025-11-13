@@ -91,15 +91,9 @@ class LlamaManager: NSObject, ObservableObject {
     
     /// IP 기반 위치 정보 가져오기 (위치 권한이 없을 때 사용)
     private func fetchIPLocation() async {
-        do {
-            print("🌐 IP 기반 위치 정보 가져오기 시도...")
-            ipLocation = try await ipLocationService.getLocationFromIP()
-            if let location = ipLocation {
-                print("✅ IP 기반 위치 정보 획득: \(location.displayName)")
-            }
-        } catch {
-            print("⚠️ IP 기반 위치 정보 가져오기 실패: \(error.localizedDescription)")
-        }
+        print("🌐 IP 기반 위치 정보 가져오기 시도...")
+        ipLocation = await ipLocationService.getLocationFromIP()
+        print("✅ IP 기반 위치 정보 획득: \(ipLocation.displayName)")
     }
     
     /// 위치 권한 요청 및 현재 위치 가져오기
