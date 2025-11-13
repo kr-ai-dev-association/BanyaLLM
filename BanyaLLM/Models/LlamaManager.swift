@@ -23,7 +23,16 @@ class LlamaManager: NSObject, ObservableObject {
         return manager
     }()
     private var currentLocation: CLLocation?
-    private var ipLocation: IPLocation?
+    // IP 위치는 항상 기본값(서울 강남구)을 가지므로 옵셔널이 아님
+    private var ipLocation: IPLocation = IPLocation(
+        city: "강남구",
+        country: "대한민국",
+        countryCode: "KR",
+        latitude: 37.5172,
+        longitude: 127.0473,
+        region: "서울특별시",
+        timezone: "Asia/Seoul"
+    )
     private let ipLocationService = IPLocationService()
     private let networkMonitor = NWPathMonitor()
     private var isNetworkAvailable = false
@@ -143,13 +152,9 @@ class LlamaManager: NSObject, ObservableObject {
             context += "\n현재 위치: 위도 \(String(format: "%.4f", location.coordinate.latitude)), 경도 \(String(format: "%.4f", location.coordinate.longitude))"
         }
         // 2순위: IP 기반 위치 (대략적 위치)
-        else if let ipLocation = ipLocation {
+        else {
             context += "\n현재 위치: \(ipLocation.displayName) (IP 기반, 대략적 위치)"
             context += "\n위치 좌표: 위도 \(String(format: "%.4f", ipLocation.latitude)), 경도 \(String(format: "%.4f", ipLocation.longitude))"
-        }
-        // 위치 정보 없음
-        else {
-            context += "\n현재 위치: 알 수 없음"
         }
         
         return context
