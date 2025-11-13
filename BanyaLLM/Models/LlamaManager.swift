@@ -336,7 +336,7 @@ class LlamaManager: NSObject, ObservableObject {
                         // 인터넷 연결되어 있으면 무조건 웹 검색
                         if let tavilyService = self.tavilyService {
                             print("🔍 인터넷 연결됨: Tavily로 웹 검색 중...")
-                            continuation.yield("검색 중... ")
+                            continuation.yield("생각 중... ")
                             
                             do {
                                 searchResults = try await tavilyService.search(query: prompt)
