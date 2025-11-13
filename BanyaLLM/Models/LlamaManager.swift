@@ -432,10 +432,14 @@ class LlamaManager: NSObject, ObservableObject {
                     }
                     let isFirstTokenReceived = TokenReceivedFlag()
                     let animationTask = Task {
-                        // "..."를 깜빡이는 효과로 표시
+                        // "..."를 깜빡이는 효과로 표시 (3개까지만 표시하고 반복)
                         while !isFirstTokenReceived.value && !Task.isCancelled {
+                            // "..." 표시
                             continuation.yield("...")
-                            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5초 간격
+                            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5초 표시
+                            // "..." 지우기 (빈 문자열로 덮어쓰기)
+                            continuation.yield("")
+                            try? await Task.sleep(nanoseconds: 200_000_000) // 0.2초 대기
                         }
                     }
                     
@@ -623,34 +627,41 @@ class LlamaManager: NSObject, ObservableObject {
                         }
                         
                         if !token.isEmpty {
-                            // 첫 번째 토큰 도착 - 애니메이션 중지
+                            // 첫 번째 토큰 도착 - 애니메이션 중지 및 이전 "..." 지우기
                             if !isFirstTokenReceived.value {
                                 isFirstTokenReceived.value = true
                                 animationTask.cancel()
+                                // 이전 "..."를 지우기 위해 빈 문자열 yield (UI에서 마지막 메시지를 덮어씀)
+                                continuation.yield("")
                             }
                             
                             // 토큰 레벨 반복 감지 (문장 완성 전에 감지)
                             let trimmedToken = token.trimmingCharacters(in: .whitespaces)
                             if !trimmedToken.isEmpty {
-                                lastTokens.append(trimmedToken)
-                                if lastTokens.count > maxTokenHistory {
-                                    lastTokens.removeFirst()
-                                }
+                                // 숫자만 있는 토큰은 반복 감지에서 제외 (예: "1", "2", "3" 등)
+                                let isNumericOnly = trimmedToken.range(of: "^\\d+$", options: .regularExpression) != nil
                                 
-                                // 같은 토큰이 연속으로 반복되는지 확인
-                                if lastTokens.count >= tokenRepeatThreshold {
-                                    let recentTokens = Array(lastTokens.suffix(tokenRepeatThreshold))
-                                    let firstToken = recentTokens[0]
-                                    let allSame = recentTokens.allSatisfy { $0 == firstToken }
+                                if !isNumericOnly {
+                                    lastTokens.append(trimmedToken)
+                                    if lastTokens.count > maxTokenHistory {
+                                        lastTokens.removeFirst()
+                                    }
                                     
-                                    if allSame && firstToken.count > 0 {
-                                        // 같은 토큰이 연속 반복됨 - 즉시 종료
-                                        finalResponse = filterSpecialTokens(accumulatedRaw)
-                                        await llamaContext.forceStop()
-                                        await llamaContext.clear()
-                                        self.conversationHistory.saveTurn(userQuestion: prompt, aiResponse: finalResponse)
-                                        continuation.finish()
-                                        return
+                                    // 같은 토큰이 연속으로 반복되는지 확인
+                                    if lastTokens.count >= tokenRepeatThreshold {
+                                        let recentTokens = Array(lastTokens.suffix(tokenRepeatThreshold))
+                                        let firstToken = recentTokens[0]
+                                        let allSame = recentTokens.allSatisfy { $0 == firstToken }
+                                        
+                                        if allSame && firstToken.count > 0 {
+                                            // 같은 토큰이 연속 반복됨 - 즉시 종료
+                                            finalResponse = filterSpecialTokens(accumulatedRaw)
+                                            await llamaContext.forceStop()
+                                            await llamaContext.clear()
+                                            self.conversationHistory.saveTurn(userQuestion: prompt, aiResponse: finalResponse)
+                                            continuation.finish()
+                                            return
+                                        }
                                     }
                                 }
                             }
@@ -661,20 +672,27 @@ class LlamaManager: NSObject, ObservableObject {
                             var cleanedText = filterSpecialTokens(accumulatedRaw)
                             
                             // 반복 감지: 문장 단위로 체크
+                            // 숫자 목록 패턴 (예: "1. 2. 3.")을 고려하여 문장 분리
                             let sentences = cleanedText.components(separatedBy: CharacterSet(charactersIn: ".!?\n"))
                                 .map { $0.trimmingCharacters(in: .whitespaces) }
                                 .filter { sentence in
                                     // 빈 문장 제외
                                     guard !sentence.isEmpty && sentence.count > 3 else { return false }
-                                    // 숫자만 있는 문장 제외 (예: "3.", "1." 등)
                                     let trimmed = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    
+                                    // 숫자만 있는 문장은 제외하되, 숫자 목록 패턴의 일부인 경우는 허용
+                                    // 예: "1. 첫 번째 항목"은 허용, "1."만 있는 것은 제외
+                                    // 숫자 + 마침표 + 공백 + 텍스트 패턴은 허용
+                                    if trimmed.range(of: "^\\d+\\.\\s+", options: .regularExpression) != nil {
+                                        // "1. " 패턴으로 시작하는 경우는 허용 (목록 항목)
+                                        return true
+                                    }
+                                    
+                                    // 숫자만 있거나 숫자+마침표만 있는 경우 제외
                                     if trimmed.range(of: "^\\d+\\.?$", options: .regularExpression) != nil {
                                         return false
                                     }
-                                    // 숫자로 시작하고 바로 마침표로 끝나는 문장 제외 (예: "3.")
-                                    if trimmed.range(of: "^\\d+\\.$", options: .regularExpression) != nil {
-                                        return false
-                                    }
+                                    
                                     return true
                                 }
                             
@@ -780,8 +798,14 @@ class LlamaManager: NSObject, ObservableObject {
                             if cleanedText.count > previousCleanedLength {
                                 let newContent = String(cleanedText.dropFirst(previousCleanedLength))
                                 if !newContent.isEmpty {
-                                    continuation.yield(newContent)
-                                    previousCleanedLength = cleanedText.count
+                                    // 첫 번째 토큰인 경우 이전 "..."를 지우기 위해 전체 텍스트를 yield
+                                    if previousCleanedLength == 0 && isFirstTokenReceived.value {
+                                        continuation.yield(cleanedText)
+                                        previousCleanedLength = cleanedText.count
+                                    } else {
+                                        continuation.yield(newContent)
+                                        previousCleanedLength = cleanedText.count
+                                    }
                                     finalResponse = cleanedText  // 최종 응답 업데이트
                                 }
                             } else if cleanedText.count < previousCleanedLength {
