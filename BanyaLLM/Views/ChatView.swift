@@ -108,11 +108,25 @@ struct ChatView: View {
                         .focused($isInputFocused)
                         .submitLabel(.send)
                         .onSubmit {
+                            // 키보드 숨기기
+                            isInputFocused = false
+                            // 메시지 전송
                             viewModel.sendMessage()
+                            // 약간의 딜레이 후 포커스 복원 (키보드는 나타나지 않음)
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                isInputFocused = true
+                            }
                         }
                     
                     Button(action: {
+                        // 키보드 숨기기
+                        isInputFocused = false
+                        // 메시지 전송
                         viewModel.sendMessage()
+                        // 약간의 딜레이 후 포커스 복원 (키보드는 나타나지 않음)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            isInputFocused = true
+                        }
                     }) {
                         Image(systemName: "arrow.up.circle.fill")
                             .resizable()
