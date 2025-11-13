@@ -564,7 +564,20 @@ class LlamaManager: NSObject, ObservableObject {
                                 previousSentenceCount = sentences.count
                             }
                             
-                            // 반복 감지 후 문장 완성 대기
+                            // 문장 종료 후 추가 생성 방지 (2-3문장 후 종료)
+                            if !shouldStopAfterSentence && sentences.count >= 3 {
+                                let lastChar = cleanedText.last
+                                if lastChar == "." || lastChar == "!" || lastChar == "?" {
+                                    print("✅ 충분한 응답 생성: 조기 종료")
+                                    // 종료 문자 확인 직후 즉시 종료 (문장이 잘리지 않도록)
+                                    await llamaContext.forceStop()
+                                    await llamaContext.clear()
+                                    continuation.finish()
+                                    return
+                                }
+                            }
+                            
+                            // 반복 감지 후 문장 완성 대기 (더 짧은 대기 시간)
                             if shouldStopAfterSentence {
                                 let lastChar = cleanedText.last
                                 if lastChar == "." || lastChar == "!" || lastChar == "?" {
@@ -576,24 +589,21 @@ class LlamaManager: NSObject, ObservableObject {
                                 }
                                 
                                 // 최대 대기 토큰 수 체크 (문장 완성을 기다리는 동안 너무 많은 토큰 생성 방지)
+                                // 30자로 줄여서 문장이 잘리기 전에 빠르게 종료
                                 let textGrowth = cleanedText.count - textLengthWhenStopRequested
-                                if textGrowth > 100 {  // 대략 20-30토큰 정도 (한국어 기준)
-                                    print("⚠️ 문장 완성 대기 시간 초과: 강제 종료 (텍스트 증가: \(textGrowth)자)")
+                                if textGrowth > 30 {  // 대략 10-15토큰 정도 (한국어 기준)
+                                    // 문장이 완성되지 않았지만 더 이상 기다리지 않고 종료
+                                    // 마지막 문장의 마지막 단어를 확인하여 자연스러운 종료 지점 찾기
+                                    let lastWords = cleanedText.suffix(20).trimmingCharacters(in: .whitespaces)
+                                    if !lastWords.isEmpty {
+                                        print("⚠️ 문장 완성 대기 시간 초과: 자연스러운 종료 지점에서 종료 (텍스트 증가: \(textGrowth)자)")
+                                    } else {
+                                        print("⚠️ 문장 완성 대기 시간 초과: 강제 종료 (텍스트 증가: \(textGrowth)자)")
+                                    }
                                     await llamaContext.forceStop()
                                     await llamaContext.clear()
                                     continuation.finish()
                                     return
-                                }
-                            }
-                            
-                            // 문장 종료 후 추가 생성 방지 (2-3문장 후 종료)
-                            if !shouldStopAfterSentence && sentences.count >= 3 {
-                                let lastChar = cleanedText.last
-                                if lastChar == "." || lastChar == "!" || lastChar == "?" {
-                                    print("✅ 충분한 응답 생성: 조기 종료")
-                                    shouldStopAfterSentence = true
-                                    stopReason = "충분한 응답 생성"
-                                    textLengthWhenStopRequested = cleanedText.count
                                 }
                             }
                             
