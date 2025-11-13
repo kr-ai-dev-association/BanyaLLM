@@ -74,7 +74,7 @@ struct ChatView: View {
                         .textFieldStyle(.plain)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
-                        .background(Color(.systemGray6))
+                        .background(Color(uiColor: .systemGray6))
                         .cornerRadius(24)
                         .lineLimit(1...5)
                         .focused($isInputFocused)
@@ -95,7 +95,7 @@ struct ChatView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .background(Color(.systemBackground))
+                .background(Color(uiColor: .systemBackground))
             }
             .navigationTitle("BanyaLLM")
             .navigationBarTitleDisplayMode(.inline)
@@ -124,7 +124,7 @@ struct MessageBubble: View {
                 Text(message.content)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
-                    .background(message.isUser ? Color.blue : Color(.systemGray5))
+                    .background(message.isUser ? Color.blue : Color(uiColor: .systemGray5))
                     .foregroundColor(message.isUser ? .white : .primary)
                     .cornerRadius(20)
                 
