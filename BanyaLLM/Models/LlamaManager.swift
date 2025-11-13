@@ -36,6 +36,7 @@ class LlamaManager: NSObject, ObservableObject {
     private let ipLocationService = IPLocationService()
     private let networkMonitor = NWPathMonitor()
     private var isNetworkAvailable = false
+    private let conversationHistory = ConversationHistoryManager()
     
     // Llama 3.1 System Prompt (청소년 일상 지원 에이전트)
     private let systemPrompt = """
@@ -310,7 +311,7 @@ class LlamaManager: NSObject, ObservableObject {
         throw LlamaError.modelNotFound
     }
     
-    func generate(prompt: String, previousQuestions: [String] = []) async -> AsyncStream<String> {
+    func generate(prompt: String) async -> AsyncStream<String> {
         return AsyncStream { continuation in
             Task {
                 #if targetEnvironment(simulator)
@@ -368,6 +369,9 @@ class LlamaManager: NSObject, ObservableObject {
                         print("📴 인터넷 연결 안 됨: LLM 자체 지식으로 답변합니다.")
                     }
                     
+                    // 대화 히스토리에서 이전 질문 불러오기
+                    let previousQuestions = self.conversationHistory.getRecentUserQuestions(count: 2)
+                    
                     // Llama 3.1 Chat Template 적용 (검색 결과 및 이전 질문 포함)
                     let formattedPrompt = self.formatChatPrompt(userMessage: prompt, searchResults: searchResults, previousQuestions: previousQuestions)
                     
@@ -377,6 +381,7 @@ class LlamaManager: NSObject, ObservableObject {
                     // 스트리밍 응답 생성 (강화된 특수 토큰 필터링)
                     var accumulatedRaw = ""
                     var previousCleanedLength = 0
+                    var finalResponse = ""  // 최종 응답 저장용
                     let specialTokenPatterns = [
                         "<|begin_of_text|>",
                         "<|end_of_text|>",
@@ -559,8 +564,10 @@ class LlamaManager: NSObject, ObservableObject {
                                         print("   이전: '\(mostSimilar!.sentence.prefix(40))...'")
                                         
                                         // 반복 감지 시 즉시 종료 (문장 완성 대기 없음)
+                                        finalResponse = cleanedText
                                         await llamaContext.forceStop()
                                         await llamaContext.clear()
+                                        self.conversationHistory.saveTurn(userQuestion: prompt, aiResponse: finalResponse)
                                         continuation.finish()
                                         return
                                     }
@@ -581,8 +588,10 @@ class LlamaManager: NSObject, ObservableObject {
                                 if lastChar == "." || lastChar == "!" || lastChar == "?" {
                                     print("✅ 충분한 응답 생성: 조기 종료")
                                     // 종료 문자 확인 직후 즉시 종료 (문장이 잘리지 않도록)
+                                    finalResponse = cleanedText
                                     await llamaContext.forceStop()
                                     await llamaContext.clear()
+                                    self.conversationHistory.saveTurn(userQuestion: prompt, aiResponse: finalResponse)
                                     continuation.finish()
                                     return
                                 }
@@ -593,8 +602,10 @@ class LlamaManager: NSObject, ObservableObject {
                                 let lastChar = cleanedText.last
                                 if lastChar == "." || lastChar == "!" || lastChar == "?" {
                                     print("✅ 문장 완성됨: \(stopReason)로 종료")
+                                    finalResponse = cleanedText
                                     await llamaContext.forceStop()
                                     await llamaContext.clear()
+                                    self.conversationHistory.saveTurn(userQuestion: prompt, aiResponse: finalResponse)
                                     continuation.finish()
                                     return
                                 }
@@ -611,8 +622,10 @@ class LlamaManager: NSObject, ObservableObject {
                                     } else {
                                         print("⚠️ 문장 완성 대기 시간 초과: 강제 종료 (텍스트 증가: \(textGrowth)자)")
                                     }
+                                    finalResponse = cleanedText
                                     await llamaContext.forceStop()
                                     await llamaContext.clear()
+                                    self.conversationHistory.saveTurn(userQuestion: prompt, aiResponse: finalResponse)
                                     continuation.finish()
                                     return
                                 }
@@ -624,6 +637,7 @@ class LlamaManager: NSObject, ObservableObject {
                                 if !newContent.isEmpty {
                                     continuation.yield(newContent)
                                     previousCleanedLength = cleanedText.count
+                                    finalResponse = cleanedText  // 최종 응답 업데이트
                                 }
                             } else if cleanedText.count < previousCleanedLength {
                                 // 필터링으로 인해 텍스트가 줄어든 경우 (특수 토큰 제거됨)
@@ -635,8 +649,14 @@ class LlamaManager: NSObject, ObservableObject {
                         }
                     }
                     
-                    // 추론 완료 후 정리
+                    // 추론 완료 후 정리 및 대화 히스토리 저장
                     await llamaContext.clear()
+                    
+                    // 최종 응답이 있으면 대화 히스토리에 저장
+                    if !finalResponse.isEmpty {
+                        self.conversationHistory.saveTurn(userQuestion: prompt, aiResponse: finalResponse)
+                    }
+                    
                     continuation.finish()
                 #endif
             }

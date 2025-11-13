@@ -44,17 +44,8 @@ class ChatViewModel: ObservableObject {
             let aiMessage = ChatMessage(content: "", isUser: false)
             messages.append(aiMessage)
             
-            // 이전 사용자 질문 2개 추출 (현재 질문 제외)
-            let previousQuestions = messages
-                .filter { $0.isUser }
-                .suffix(3)  // 최근 3개 (현재 질문 + 이전 2개)
-                .map { $0.content }
-                .dropLast()  // 현재 질문 제외
-                .reversed()  // 오래된 것부터
-                .map { $0 }
-            
-            // LLM 스트리밍 응답 (이전 질문 포함)
-            for await token in await llamaManager.generate(prompt: userInput, previousQuestions: Array(previousQuestions)) {
+            // LLM 스트리밍 응답 (대화 히스토리는 LlamaManager에서 자동으로 불러옴)
+            for await token in await llamaManager.generate(prompt: userInput) {
                 aiResponse += token
                 // 메시지 업데이트
                 if aiMessageIndex < messages.count {
