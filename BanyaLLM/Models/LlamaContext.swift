@@ -253,6 +253,38 @@ actor LlamaContext {
             )
         }
         
+        // 부분 특수 토큰 패턴 필터링 (토큰이 분해되어 생성되는 경우)
+        // 예: '<|', '|>', 단독 '|' 등
+        let partialPatterns = [
+            "<|",  // 특수 토큰 시작
+            "|>",  // 특수 토큰 끝
+            "^\\|$",  // 단독 파이프 (정규식)
+            "^<\\|",  // '<|'로 시작
+            "\\|>$"   // '|>'로 끝
+        ]
+        
+        // 단독 파이프 제거
+        if new_token_str == "|" {
+            new_token_str = ""
+        }
+        
+        // '<|' 또는 '|>' 포함 시 제거
+        if new_token_str.contains("<|") || new_token_str.contains("|>") {
+            new_token_str = new_token_str.replacingOccurrences(of: "<|", with: "")
+            new_token_str = new_token_str.replacingOccurrences(of: "|>", with: "")
+        }
+        
+        // 정규식으로 부분 패턴 제거
+        if let regex = try? NSRegularExpression(pattern: "<\\|.*?\\|>", options: []) {
+            let range = NSRange(new_token_str.startIndex..., in: new_token_str)
+            new_token_str = regex.stringByReplacingMatches(
+                in: new_token_str,
+                options: [],
+                range: range,
+                withTemplate: ""
+            )
+        }
+        
         llama_batch_clear(&batch)
         llama_batch_add(&batch, new_token_id, n_cur, [0], true)
         

@@ -229,14 +229,47 @@ class LlamaManager: ObservableObject {
                         // 3. 부분 특수 토큰 패턴 제거 (공격적 필터링)
                         // "<|" + "|>" 조합을 찾아 제거
                         var foundPattern = true
-                        while foundPattern {
+                        var patternIterations = 0
+                        while foundPattern && patternIterations < 10 {  // 무한 루프 방지
+                            patternIterations += 1
                             foundPattern = false
+                            
+                            // 방법 1: "<|" + "|>" 조합 찾기
                             if let startRange = cleaned.range(of: "<|", options: .backwards),
                                let endRange = cleaned.range(of: "|>", range: startRange.upperBound..<cleaned.endIndex) {
                                 // 특수 토큰 패턴 발견: 제거
                                 cleaned = String(cleaned[..<startRange.lowerBound]) + String(cleaned[endRange.upperBound...])
                                 foundPattern = true
+                                continue
                             }
+                            
+                            // 방법 2: 단독 파이프 제거 (특수 토큰의 일부일 가능성)
+                            if cleaned.contains("|") && !cleaned.contains("<|") && !cleaned.contains("|>") {
+                                // 단독 파이프가 있고 특수 토큰 패턴이 없으면 제거
+                                cleaned = cleaned.replacingOccurrences(of: "|", with: "")
+                                foundPattern = true
+                            }
+                            
+                            // 방법 3: 정규식으로 부분 패턴 제거 (<|...|>)
+                            if let regex = try? NSRegularExpression(pattern: "<\\|[^|]*\\|>", options: []) {
+                                let range = NSRange(cleaned.startIndex..., in: cleaned)
+                                let newCleaned = regex.stringByReplacingMatches(
+                                    in: cleaned,
+                                    options: [],
+                                    range: range,
+                                    withTemplate: ""
+                                )
+                                if newCleaned != cleaned {
+                                    cleaned = newCleaned
+                                    foundPattern = true
+                                }
+                            }
+                            
+                            // 방법 4: 공백 + "<|" 또는 "|>" + 공백 패턴 제거
+                            cleaned = cleaned.replacingOccurrences(of: " <|", with: "")
+                            cleaned = cleaned.replacingOccurrences(of: "<| ", with: "")
+                            cleaned = cleaned.replacingOccurrences(of: " |>", with: "")
+                            cleaned = cleaned.replacingOccurrences(of: "|> ", with: "")
                         }
                         
                         // 4. 이상한 패턴 제거 (<kts:1> 등)
