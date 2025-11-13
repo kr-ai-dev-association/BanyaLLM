@@ -82,28 +82,27 @@ class LlamaManager: ObservableObject {
         return AsyncStream { continuation in
             Task {
                 guard let llamaContext = self.llamaContext else {
+                    print("❌ LlamaContext가 초기화되지 않았습니다")
                     continuation.finish()
                     return
                 }
                 
-                // 실제 LLM 추론은 llama.cpp 통합 후 구현
-                // 임시 시뮬레이션
-                let responses = [
-                    "안녕하세요! ",
-                    "무엇을 ",
-                    "도와드릴까요? ",
-                    "궁금한 ",
-                    "점이 ",
-                    "있으시면 ",
-                    "언제든 ",
-                    "물어보세요!"
-                ]
+                // LLM 추론 초기화
+                await llamaContext.completionInit(text: prompt)
                 
-                for response in responses {
-                    try? await Task.sleep(nanoseconds: 100_000_000) // 0.1초
-                    continuation.yield(response)
+                // 스트리밍 응답 생성
+                while await !llamaContext.isDone {
+                    let token = await llamaContext.completionLoop()
+                    
+                    if !token.isEmpty {
+                        continuation.yield(token)
+                        // 자연스러운 타이핑 효과
+                        try? await Task.sleep(nanoseconds: 50_000_000) // 0.05초
+                    }
                 }
                 
+                // 추론 완료 후 정리
+                await llamaContext.clear()
                 continuation.finish()
             }
         }
