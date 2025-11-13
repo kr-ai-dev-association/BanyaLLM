@@ -166,8 +166,9 @@ class LlamaManager: NSObject, ObservableObject {
     /// - Parameters:
     ///   - userMessage: 사용자 메시지
     ///   - searchResults: 웹 검색 결과 (선택적)
+    ///   - previousQuestions: 이전 질문들 (최대 2개)
     /// - Returns: 포맷된 전체 프롬프트
-    private func formatChatPrompt(userMessage: String, searchResults: [SearchResult]? = nil) -> String {
+    private func formatChatPrompt(userMessage: String, searchResults: [SearchResult]? = nil, previousQuestions: [String] = []) -> String {
         let bos = "<|begin_of_text|>"
         let startHeader = "<|start_header_id|>"
         let endHeader = "<|end_header_id|>"
@@ -176,8 +177,18 @@ class LlamaManager: NSObject, ObservableObject {
         // 현재 컨텍스트 정보 추가
         let contextInfo = getCurrentContext()
         
+        // 이전 질문 정보 추가
+        var previousQuestionsContext = ""
+        if !previousQuestions.isEmpty {
+            previousQuestionsContext = "\n\n[이전 대화 맥락]\n"
+            for (index, question) in previousQuestions.enumerated() {
+                previousQuestionsContext += "\(index + 1). \(question)\n"
+            }
+            previousQuestionsContext += "\n위 질문들을 참고하여 현재 질문에 답변해주세요."
+        }
+        
         // 검색 결과가 있으면 프롬프트에 포함
-        var enhancedMessage = "[현재 상황 정보]\n\(contextInfo)\n\n[사용자 질문]\n\(userMessage)"
+        var enhancedMessage = "[현재 상황 정보]\n\(contextInfo)\(previousQuestionsContext)\n\n[사용자 질문]\n\(userMessage)"
         
         if let results = searchResults, !results.isEmpty {
             var searchContext = "\n\n[웹 검색 결과]\n"
@@ -299,7 +310,7 @@ class LlamaManager: NSObject, ObservableObject {
         throw LlamaError.modelNotFound
     }
     
-    func generate(prompt: String) async -> AsyncStream<String> {
+    func generate(prompt: String, previousQuestions: [String] = []) async -> AsyncStream<String> {
         return AsyncStream { continuation in
             Task {
                 #if targetEnvironment(simulator)
@@ -357,8 +368,8 @@ class LlamaManager: NSObject, ObservableObject {
                         print("📴 인터넷 연결 안 됨: LLM 자체 지식으로 답변합니다.")
                     }
                     
-                    // Llama 3.1 Chat Template 적용 (검색 결과 포함)
-                    let formattedPrompt = self.formatChatPrompt(userMessage: prompt, searchResults: searchResults)
+                    // Llama 3.1 Chat Template 적용 (검색 결과 및 이전 질문 포함)
+                    let formattedPrompt = self.formatChatPrompt(userMessage: prompt, searchResults: searchResults, previousQuestions: previousQuestions)
                     
                     // LLM 추론 초기화
                     await llamaContext.completionInit(text: formattedPrompt)
