@@ -17,10 +17,11 @@ class LlamaManager: ObservableObject {
     
     // Llama 3.1 System Prompt (대화 품질 향상)
     private let systemPrompt = """
-당신은 친절하고 간결한 한국어 대화 전문가입니다.
-항상 한국어로만 대답하며, 질문에 핵심만 명확하게 답변합니다.
-답변은 2-3문장 이내로 간결하게 작성하고, 반복이나 장황한 설명을 피합니다.
-모르는 정보에 대해서는 솔직하게 "죄송하지만 그 정보는 알 수 없습니다"라고 답변합니다.
+당신은 매우 간결하고 명확한 한국어 대화 전문가입니다.
+항상 한국어로만 대답하며, 질문에 핵심만 1-2문장으로 답변합니다.
+절대 반복하지 않고, 같은 내용을 두 번 말하지 않습니다.
+장황한 설명이나 불필요한 예시를 피하고, 핵심만 간단히 말합니다.
+모르는 정보는 "죄송하지만 그 정보는 알 수 없습니다"라고만 답변합니다.
 """
     
     nonisolated init() {
@@ -186,7 +187,7 @@ class LlamaManager: ObservableObject {
                     // LLM 추론 초기화
                     await llamaContext.completionInit(text: formattedPrompt)
                     
-                    // 스트리밍 응답 생성 (누적 버퍼로 특수 토큰 필터링)
+                    // 스트리밍 응답 생성 (강화된 특수 토큰 필터링)
                     var accumulatedRaw = ""
                     var previousCleanedLength = 0
                     let specialTokenPatterns = [
@@ -200,28 +201,60 @@ class LlamaManager: ObservableObject {
                         "<|finetune_right_pad_id|>"
                     ]
                     
+                    func filterSpecialTokens(_ text: String) -> String {
+                        var cleaned = text
+                        
+                        // 1. 완전한 특수 토큰 패턴 제거 (반복적으로 제거하여 중첩 패턴도 처리)
+                        var previousLength = 0
+                        while cleaned.count != previousLength {
+                            previousLength = cleaned.count
+                            for pattern in specialTokenPatterns {
+                                cleaned = cleaned.replacingOccurrences(of: pattern, with: "")
+                            }
+                        }
+                        
+                        // 2. reserved_special_token 패턴 제거
+                        if let regex = try? NSRegularExpression(pattern: "<\\|reserved_special_token_\\d+\\|>", options: []) {
+                            let range = NSRange(cleaned.startIndex..., in: cleaned)
+                            cleaned = regex.stringByReplacingMatches(
+                                in: cleaned,
+                                options: [],
+                                range: range,
+                                withTemplate: ""
+                            )
+                        }
+                        
+                        // 3. 부분 특수 토큰 패턴 제거 (슬라이딩 윈도우)
+                        // 최근 30자 내에서 "<|" + "|>" 조합 찾기
+                        let windowSize = 30
+                        if cleaned.count >= windowSize {
+                            let recentText = String(cleaned.suffix(windowSize))
+                            // "<|"로 시작하고 "|>"로 끝나는 패턴 찾기
+                            if let startIndex = recentText.lastIndex(of: "<"),
+                               let pipeAfter = recentText.index(startIndex, offsetBy: 1, limitedBy: recentText.endIndex),
+                               pipeAfter < recentText.endIndex && recentText[pipeAfter] == "|",
+                               let endIndex = recentText.range(of: "|>", range: pipeAfter..<recentText.endIndex)?.upperBound {
+                                // 특수 토큰 패턴 발견: 전체 텍스트에서 해당 부분 제거
+                                let globalStartOffset = cleaned.count - windowSize + recentText.distance(from: recentText.startIndex, to: startIndex)
+                                let globalEndOffset = cleaned.count - windowSize + recentText.distance(from: recentText.startIndex, to: endIndex)
+                                
+                                let globalStart = cleaned.index(cleaned.startIndex, offsetBy: globalStartOffset)
+                                let globalEnd = cleaned.index(cleaned.startIndex, offsetBy: globalEndOffset)
+                                cleaned = String(cleaned[..<globalStart]) + String(cleaned[globalEnd...])
+                            }
+                        }
+                        
+                        return cleaned
+                    }
+                    
                     while await !llamaContext.isDone {
                         let token = await llamaContext.completionLoop()
                         
                         if !token.isEmpty {
                             accumulatedRaw += token
                             
-                            // 특수 토큰 패턴 제거
-                            var cleanedText = accumulatedRaw
-                            for pattern in specialTokenPatterns {
-                                cleanedText = cleanedText.replacingOccurrences(of: pattern, with: "")
-                            }
-                            
-                            // reserved_special_token 패턴 제거
-                            if let regex = try? NSRegularExpression(pattern: "<\\|reserved_special_token_\\d+\\|>", options: []) {
-                                let range = NSRange(cleanedText.startIndex..., in: cleanedText)
-                                cleanedText = regex.stringByReplacingMatches(
-                                    in: cleanedText,
-                                    options: [],
-                                    range: range,
-                                    withTemplate: ""
-                                )
-                            }
+                            // 강화된 특수 토큰 필터링
+                            var cleanedText = filterSpecialTokens(accumulatedRaw)
                             
                             // 이전에 출력한 부분을 제외하고 새로운 부분만 출력
                             if cleanedText.count > previousCleanedLength {
@@ -230,6 +263,9 @@ class LlamaManager: ObservableObject {
                                     continuation.yield(newContent)
                                     previousCleanedLength = cleanedText.count
                                 }
+                            } else if cleanedText.count < previousCleanedLength {
+                                // 필터링으로 인해 텍스트가 줄어든 경우 (특수 토큰 제거됨)
+                                previousCleanedLength = cleanedText.count
                             }
                             
                             // 자연스러운 타이핑 효과

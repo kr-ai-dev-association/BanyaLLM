@@ -40,7 +40,7 @@ actor LlamaContext {
     private var temporary_invalid_cchars: [CChar] = []
     
     var isDone: Bool = false
-    var n_len: Int32 = 128  // 최대 생성 토큰 수 (간결한 응답)
+    var n_len: Int32 = 64   // 최대 생성 토큰 수 (매우 간결한 응답, 2-3문장)
     var n_cur: Int32 = 0
     var n_decode: Int32 = 0
     
@@ -109,21 +109,21 @@ actor LlamaContext {
         // 3. Min-P - 낮은 확률 토큰 배제 (Llama 3.1 핵심 설정)
         llama_sampler_chain_add(self.sampling, llama_sampler_init_min_p(0.05, 1))
         
-        // 4. Temperature - 창의성 조절 (0.7 = 자연스러운 대화)
-        llama_sampler_chain_add(self.sampling, llama_sampler_init_temp(0.7))
+        // 4. Temperature - 창의성 조절 (0.6 = 더 결정론적, 반복 감소)
+        llama_sampler_chain_add(self.sampling, llama_sampler_init_temp(0.6))
         
-        // 5. Repeat Penalty - 반복 방지 (1.05 = 적당한 패널티)
+        // 5. Repeat Penalty - 반복 방지 강화 (1.15 = 강한 패널티, last_n=64 = 최근 64 토큰만 고려)
         llama_sampler_chain_add(self.sampling, llama_sampler_init_penalties(
-            512,    // last_n: 최근 512 토큰 고려
-            1.05,   // repeat_penalty: 반복 패널티
-            0.0,    // freq_penalty
-            0.0     // presence_penalty
+            64,     // last_n: 최근 64 토큰만 고려 (반복 감지 정확도 향상)
+            1.15,   // repeat_penalty: 강한 반복 패널티 (1.05 → 1.15)
+            0.1,    // freq_penalty: 빈도 패널티 추가 (반복 단어 억제)
+            0.1     // presence_penalty: 존재 패널티 추가 (이미 나온 단어 억제)
         ))
         
         // 6. Dist 샘플링 (최종 토큰 선택)
         llama_sampler_chain_add(self.sampling, llama_sampler_init_dist(UInt32.random(in: 0...1000)))
         
-        print("🎛️ 샘플링 설정: Temp=0.7, Top-P=0.9, Min-P=0.05, Repeat=1.05")
+        print("🎛️ 샘플링 설정: Temp=0.6, Top-P=0.9, Min-P=0.05, Repeat=1.15 (last_n=64), Freq=0.1, Presence=0.1")
         
         self.vocab = llama_model_get_vocab(loadedModel)
         
