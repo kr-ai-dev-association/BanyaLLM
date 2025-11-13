@@ -46,7 +46,12 @@ class ChatViewModel: ObservableObject {
             
             // LLM 스트리밍 응답 (대화 히스토리는 LlamaManager에서 자동으로 불러옴)
             for await token in await llamaManager.generate(prompt: userInput) {
-                aiResponse += token
+                // 빈 문자열이 오면 이전 내용을 지움 (애니메이션 깜빡임 효과)
+                if token.isEmpty {
+                    aiResponse = ""
+                } else {
+                    aiResponse += token
+                }
                 // 메시지 업데이트
                 if aiMessageIndex < messages.count {
                     messages[aiMessageIndex] = ChatMessage(
