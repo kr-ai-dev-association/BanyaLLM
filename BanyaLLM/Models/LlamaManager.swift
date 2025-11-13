@@ -122,30 +122,47 @@ class LlamaManager: ObservableObject {
                 continuation.finish()
                 #else
                 
-                guard let llamaContext = self.llamaContext else {
-                    print("❌ LlamaContext가 초기화되지 않았습니다")
-                    continuation.yield("모델이 로드되지 않았습니다. 앱을 재시작해주세요.")
-                    continuation.finish()
-                    return
-                }
-                
-                // LLM 추론 초기화
-                await llamaContext.completionInit(text: prompt)
-                
-                // 스트리밍 응답 생성
-                while await !llamaContext.isDone {
-                    let token = await llamaContext.completionLoop()
-                    
-                    if !token.isEmpty {
-                        continuation.yield(token)
-                        // 자연스러운 타이핑 효과
-                        try? await Task.sleep(nanoseconds: 50_000_000) // 0.05초
+                    guard let llamaContext = self.llamaContext else {
+                        print("❌ LlamaContext가 초기화되지 않았습니다")
+                        continuation.yield("모델이 로드되지 않았습니다. 앱을 재시작해주세요.")
+                        continuation.finish()
+                        return
                     }
-                }
-                
-                // 추론 완료 후 정리
-                await llamaContext.clear()
-                continuation.finish()
+                    
+                    print(String(repeating: "=", count: 50))
+                    print("🎯 LLM 생성 시작")
+                    print("📥 프롬프트: '\(prompt)'")
+                    print(String(repeating: "=", count: 50))
+                    
+                    // LLM 추론 초기화
+                    await llamaContext.completionInit(text: prompt)
+                    
+                    var totalTokens = 0
+                    var totalOutput = ""
+                    
+                    // 스트리밍 응답 생성
+                    while await !llamaContext.isDone {
+                        let token = await llamaContext.completionLoop()
+                        
+                        if !token.isEmpty {
+                            totalTokens += 1
+                            totalOutput += token
+                            print("📤 출력 토큰 #\(totalTokens): '\(token)'")
+                            continuation.yield(token)
+                            // 자연스러운 타이핑 효과
+                            try? await Task.sleep(nanoseconds: 50_000_000) // 0.05초
+                        }
+                    }
+                    
+                    print(String(repeating: "=", count: 50))
+                    print("✅ 생성 완료")
+                    print("📊 총 토큰 수: \(totalTokens)")
+                    print("📝 전체 출력: '\(totalOutput)'")
+                    print(String(repeating: "=", count: 50))
+                    
+                    // 추론 완료 후 정리
+                    await llamaContext.clear()
+                    continuation.finish()
                 #endif
             }
         }

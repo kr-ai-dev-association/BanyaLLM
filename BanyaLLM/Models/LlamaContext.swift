@@ -107,10 +107,14 @@ actor LlamaContext {
     func completionInit(text: String) {
         guard let context = context else { return }
         
-        print("🚀 추론 시작: \(text)")
+        print("🚀 추론 시작")
+        print("📝 입력 텍스트: '\(text)'")
         
         tokens_list = tokenize(text: text, add_bos: true)
         temporary_invalid_cchars = []
+        
+        print("🔢 토큰화 완료: \(tokens_list.count)개 토큰")
+        print("🔢 토큰 목록: \(tokens_list.prefix(10))...")
         
         let n_ctx = llama_n_ctx(context)
         let n_kv_req = tokens_list.count + (Int(n_len) - tokens_list.count)
@@ -146,27 +150,35 @@ actor LlamaContext {
         
         let new_token_id = llama_sampler_sample(sampling, context, batch.n_tokens - 1)
         
+        print("🔹 생성된 토큰 ID: \(new_token_id), 위치: \(n_cur)/\(n_len)")
+        
         if llama_vocab_is_eog(vocab, new_token_id) || n_cur == n_len {
+            print("✅ 생성 완료 (토큰: \(new_token_id), EOG: \(llama_vocab_is_eog(vocab, new_token_id)), 위치: \(n_cur)/\(n_len))")
             isDone = true
             let new_token_str = String(cString: temporary_invalid_cchars + [0])
             temporary_invalid_cchars.removeAll()
+            print("📝 최종 반환: '\(new_token_str)'")
             return new_token_str
         }
         
         let new_token_cchars = token_to_piece(token: new_token_id)
+        print("🔤 토큰 변환: \(new_token_cchars.count)바이트")
         temporary_invalid_cchars.append(contentsOf: new_token_cchars)
         let new_token_str: String
         if let string = String(validatingUTF8: temporary_invalid_cchars + [0]) {
             temporary_invalid_cchars.removeAll()
             new_token_str = string
+            print("✅ UTF8 변환 성공: '\(new_token_str)'")
         } else if (0..<temporary_invalid_cchars.count).contains(where: {
             $0 != 0 && String(validatingUTF8: Array(temporary_invalid_cchars.suffix($0)) + [0]) != nil
         }) {
             let string = String(cString: temporary_invalid_cchars + [0])
             temporary_invalid_cchars.removeAll()
             new_token_str = string
+            print("⚠️ 부분 UTF8 변환: '\(new_token_str)'")
         } else {
             new_token_str = ""
+            print("⏳ UTF8 대기 중... (버퍼: \(temporary_invalid_cchars.count)바이트)")
         }
         
         llama_batch_clear(&batch)
@@ -176,7 +188,7 @@ actor LlamaContext {
         n_cur += 1
         
         if llama_decode(context, batch) != 0 {
-            print("❌ llama_decode 실패")
+            print("❌ llama_decode 실패!")
         }
         
         return new_token_str
