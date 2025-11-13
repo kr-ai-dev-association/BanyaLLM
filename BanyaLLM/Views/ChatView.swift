@@ -78,6 +78,7 @@ struct ChatView: View {
                         .cornerRadius(24)
                         .lineLimit(1...5)
                         .focused($isInputFocused)
+                        .submitLabel(.send)
                         .onSubmit {
                             viewModel.sendMessage()
                         }
