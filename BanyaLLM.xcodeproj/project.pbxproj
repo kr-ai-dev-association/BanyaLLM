@@ -6,6 +6,13 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		EA45544F2EC58272006AE40D /* llama.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = EA45544D2EC58241006AE40D /* llama.xcframework */; };
+		EA4554502EC58273006AE40D /* llama.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = EA45544D2EC58241006AE40D /* llama.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		EA4554542EC582AD006AE40D /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EA4554532EC582AD006AE40D /* Metal.framework */; };
+		EA4554562EC582BF006AE40D /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EA4554552EC582BF006AE40D /* Accelerate.framework */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		EA4553D02EC56F21006AE40D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -23,10 +30,27 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		EA4554512EC58273006AE40D /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				EA4554502EC58273006AE40D /* llama.xcframework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		EA4553C12EC56F20006AE40D /* BanyaLLM.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BanyaLLM.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		EA4553CF2EC56F21006AE40D /* BanyaLLMTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BanyaLLMTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		EA4553D92EC56F21006AE40D /* BanyaLLMUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BanyaLLMUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		EA45544D2EC58241006AE40D /* llama.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = llama.xcframework; sourceTree = "<group>"; };
+		EA4554532EC582AD006AE40D /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk/System/Library/Frameworks/Metal.framework; sourceTree = DEVELOPER_DIR; };
+		EA4554552EC582BF006AE40D /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.5.sdk/System/Library/Frameworks/Accelerate.framework; sourceTree = DEVELOPER_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -52,6 +76,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				EA4554562EC582BF006AE40D /* Accelerate.framework in Frameworks */,
+				EA4554542EC582AD006AE40D /* Metal.framework in Frameworks */,
+				EA45544F2EC58272006AE40D /* llama.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -79,6 +106,8 @@
 				EA4553D22EC56F21006AE40D /* BanyaLLMTests */,
 				EA4553DC2EC56F21006AE40D /* BanyaLLMUITests */,
 				EA4553C22EC56F20006AE40D /* Products */,
+				EA45544D2EC58241006AE40D /* llama.xcframework */,
+				EA4554522EC582AD006AE40D /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -92,6 +121,15 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		EA4554522EC582AD006AE40D /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				EA4554552EC582BF006AE40D /* Accelerate.framework */,
+				EA4554532EC582AD006AE40D /* Metal.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -102,6 +140,7 @@
 				EA4553BD2EC56F20006AE40D /* Sources */,
 				EA4553BE2EC56F20006AE40D /* Frameworks */,
 				EA4553BF2EC56F20006AE40D /* Resources */,
+				EA4554512EC58273006AE40D /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -418,6 +457,7 @@
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = BanyaLLM/Models/LlamaBridge.h;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				XROS_DEPLOYMENT_TARGET = 2.5;
@@ -457,6 +497,7 @@
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = BanyaLLM/Models/LlamaBridge.h;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				XROS_DEPLOYMENT_TARGET = 2.5;
