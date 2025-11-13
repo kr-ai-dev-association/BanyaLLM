@@ -167,14 +167,19 @@ actor LlamaContext {
     }
     
     func completionLoop() -> String {
+        print("🔁 completionLoop 진입")
+        
         guard let context = context,
               let sampling = sampling,
               let vocab = vocab else {
+            print("❌ context/sampling/vocab 중 nil 발견")
             isDone = true
             return ""
         }
         
+        print("🎲 샘플링 시작 (batch.n_tokens: \(batch.n_tokens))")
         let new_token_id = llama_sampler_sample(sampling, context, batch.n_tokens - 1)
+        print("🎲 샘플링 완료: 토큰 ID = \(new_token_id)")
         
         // EOG 토큰 감지 (llama_token_is_eog 사용)
         guard let model = model else {

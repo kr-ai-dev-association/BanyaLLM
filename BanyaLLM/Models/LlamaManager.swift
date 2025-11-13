@@ -186,11 +186,28 @@ class LlamaManager: ObservableObject {
                     let formattedPrompt = self.formatChatPrompt(userMessage: prompt)
                     
                     // LLM 추론 초기화
+                    print("🔄 completionInit 호출 중...")
                     await llamaContext.completionInit(text: formattedPrompt)
+                    print("✅ completionInit 완료")
+                    
+                    // isDone 상태 확인
+                    let isDoneStatus = await llamaContext.isDone
+                    print("📊 isDone 상태: \(isDoneStatus)")
                     
                     // 스트리밍 응답 생성
+                    print("🔁 응답 생성 루프 시작")
+                    var loopCount = 0
                     while await !llamaContext.isDone {
+                        loopCount += 1
+                        if loopCount == 1 {
+                            print("🔁 첫 번째 completionLoop 호출...")
+                        }
+                        
                         let token = await llamaContext.completionLoop()
+                        
+                        if loopCount == 1 {
+                            print("✅ 첫 번째 토큰 생성 완료: '\(token)'")
+                        }
                         
                         if !token.isEmpty {
                             continuation.yield(token)
@@ -199,7 +216,7 @@ class LlamaManager: ObservableObject {
                         }
                     }
                     
-                    print("✅ 생성 완료")
+                    print("✅ 생성 완료 (총 \(loopCount)번 반복)")
                     
                     // 추론 완료 후 정리
                     await llamaContext.clear()
