@@ -840,13 +840,19 @@ class LlamaManager: NSObject, ObservableObject {
                                     if previousCleanedLength == 0 && isFirstTokenReceived.value {
                                         // "..."를 지우기 위해 빈 문자열 yield
                                         continuation.yield("")
-                                        // 약간의 딜레이 후 전체 텍스트 yield (첫 글자가 잘리지 않도록)
-                                        try? await Task.sleep(nanoseconds: 50_000_000) // 0.05초 딜레이
+                                        // 최적화: 딜레이 감소 (50ms → 20ms)
+                                        try? await Task.sleep(nanoseconds: 20_000_000) // 0.02초 딜레이
                                         continuation.yield(cleanedText)
                                         previousCleanedLength = cleanedText.count
                                     } else {
                                         continuation.yield(newContent)
                                         previousCleanedLength = cleanedText.count
+                                        
+                                        // 최적화: 타이핑 효과 딜레이 감소 (50ms → 20ms)
+                                        // 긴 토큰일 때만 딜레이 적용하여 사용자 경험 유지하면서 속도 향상
+                                        if newContent.count > 3 {
+                                            try? await Task.sleep(nanoseconds: 20_000_000)  // 20ms로 감소
+                                        }
                                     }
                                     finalResponse = cleanedText  // 최종 응답 업데이트
                                 }
@@ -854,9 +860,6 @@ class LlamaManager: NSObject, ObservableObject {
                                 // 필터링으로 인해 텍스트가 줄어든 경우 (특수 토큰 제거됨)
                                 previousCleanedLength = cleanedText.count
                             }
-                            
-                            // 자연스러운 타이핑 효과
-                            try? await Task.sleep(nanoseconds: 50_000_000)
                         }
                     }
                     

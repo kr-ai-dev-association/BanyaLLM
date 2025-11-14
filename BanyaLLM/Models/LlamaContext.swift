@@ -49,7 +49,7 @@ actor LlamaContext {
     private var lastBatchSize: Int32 = 0  // 이전 batch의 크기 추적 (llama_sampler_sample용)
     
     var isDone: Bool = false
-    var n_len: Int32 = 256   // 최대 생성 토큰 수 (적절한 길이의 응답, 5-8문장)
+    var n_len: Int32 = 150   // 최대 생성 토큰 수 (적절한 길이의 응답, 3-5문장)
     var n_cur: Int32 = 0
     
     // 강제 종료 메서드
@@ -84,9 +84,12 @@ actor LlamaContext {
         model_params.n_gpu_layers = 0
         // print("📱 시뮬레이터: CPU 모드")
         #else
-        // GPU 메모리 부족 방지: 일부 레이어만 GPU에 로드
-        model_params.n_gpu_layers = 24  // 33개 중 24개만 GPU (약 70%)
-        // print("⚡ 실제 기기: 하이브리드 모드 (GPU: 24레이어, CPU: 9레이어)")
+        // 최적화: GPU 레이어 수 증가 (30개로 설정)
+        // 24 → 30개 레이어 (약 +0.6GB 메모리 추가)
+        // 예상 성능 향상: 20-30%
+        // 주의: 메모리 사용량이 증가합니다
+        model_params.n_gpu_layers = 30  // 32개 중 30개를 GPU에 로드 (약 94%)
+        // print("⚡ 실제 기기: 하이브리드 모드 (GPU: 30레이어, CPU: 2레이어)")
         #endif
         
         guard let loadedModel = llama_model_load_from_file(modelPath, model_params) else {
