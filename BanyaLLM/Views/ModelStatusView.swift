@@ -9,20 +9,24 @@ import SwiftUI
 
 struct ModelStatusView: View {
     @ObservedObject var llamaManager: LlamaManager
+    @State private var showCompletionMessage: Bool = false
     
     var body: some View {
         VStack(spacing: 12) {
             if llamaManager.isModelLoaded {
-                HStack {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                    Text("모델 로드 완료")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                if showCompletionMessage {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Text("모델 로드 완료")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .transition(.opacity)
                 }
             } else {
                 HStack {
-                    ProgressView()
+                    ProgressView(value: llamaManager.loadingProgressValue)
                         .scaleEffect(0.7)
                     Text(llamaManager.loadingProgress)
                         .font(.caption)
@@ -41,7 +45,7 @@ struct ModelStatusView: View {
                 .cornerRadius(8)
             #else
             if llamaManager.isModelLoaded {
-                Text("⚡ 실제 LLM 모드 (MPS 가속)")
+                Text("⚡ MPS 가속 모드")
                     .font(.caption2)
                     .foregroundColor(.green)
                     .padding(.horizontal, 8)
@@ -52,6 +56,21 @@ struct ModelStatusView: View {
             #endif
         }
         .padding(.vertical, 8)
+        .onChange(of: llamaManager.loadingProgressValue) { oldValue, newValue in
+            // 프로그래스바가 100%가 되면 완료 메시지 표시
+            if newValue >= 1.0 && !showCompletionMessage {
+                withAnimation {
+                    showCompletionMessage = true
+                }
+                // 2초 후 메시지 사라지게
+                Task {
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)  // 2초
+                    withAnimation {
+                        showCompletionMessage = false
+                    }
+                }
+            }
+        }
     }
 }
 

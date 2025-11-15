@@ -17,34 +17,17 @@ struct SplashView: View {
             ChatView()
         } else {
             ZStack {
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color(red: 0.4, green: 0.2, blue: 0.8),
-                        Color(red: 0.2, green: 0.4, blue: 1.0)
-                    ]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+                // 챗팅 화면과 동일한 배경색
+                Color(uiColor: .systemBackground)
+                    .ignoresSafeArea()
                 
-                VStack(spacing: 20) {
-                    Image(systemName: "message.circle.fill")
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 120, height: 120)
-                        .foregroundColor(.white)
-                        .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
-                    
-                    Text("BanyaLLM")
-                        .font(.system(size: 42, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                    
-                    Text("AI 채팅 어시스턴트")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundColor(.white.opacity(0.9))
-                }
-                .scaleEffect(scale)
-                .opacity(opacity)
+                // Logo 이미지
+                Image("logo")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 200, height: 200)
+                    .scaleEffect(scale)
+                    .opacity(opacity)
             }
             .onAppear {
                 withAnimation(.easeIn(duration: 0.8)) {

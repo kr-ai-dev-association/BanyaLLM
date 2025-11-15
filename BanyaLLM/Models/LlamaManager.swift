@@ -13,6 +13,7 @@ import Network
 class LlamaManager: NSObject, ObservableObject {
     @Published var isModelLoaded: Bool = false
     @Published var loadingProgress: String = ""
+    @Published var loadingProgressValue: Double = 0.0  // 0.0 ~ 1.0
     
     private var llamaContext: LlamaContext?
     private let modelFilename = "llama31-banyaa-q4_k_m.gguf"
@@ -279,6 +280,7 @@ class LlamaManager: NSObject, ObservableObject {
             
         } catch {
             isModelLoaded = false
+            loadingProgressValue = 0.0
             loadingProgress = "모델 파일을 선택해주세요"
             // print("ℹ️ 모델 파일 선택 필요")
         }
@@ -288,12 +290,16 @@ class LlamaManager: NSObject, ObservableObject {
     func loadModelFromPath(_ path: String) async -> Bool {
         do {
             loadingProgress = "모델 로딩 중..."
+            loadingProgressValue = 0.0
             // print("📂 모델 로드 시작: \(path)")
             
             // LlamaContext 생성 및 초기화
             llamaContext = LlamaContext(modelPath: path)
+            loadingProgressValue = 0.5  // 로딩 중간 단계
             try await llamaContext?.initialize()
             
+            // 프로그래스바를 100%로 설정
+            loadingProgressValue = 1.0
             isModelLoaded = true
             loadingProgress = "모델 로드 완료"
             // print("✅ 모델이 성공적으로 로드되었습니다")
@@ -306,6 +312,7 @@ class LlamaManager: NSObject, ObservableObject {
             
         } catch {
             isModelLoaded = false
+            loadingProgressValue = 0.0
             loadingProgress = "모델 로드 실패: \(error.localizedDescription)"
             // print("❌ 모델 로드 실패: \(error)")
             
